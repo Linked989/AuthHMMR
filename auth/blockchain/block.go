@@ -77,7 +77,7 @@ func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, leafSize int, o
 
 	root := tree.Root()
 	if len(root) != hashSize {
-		return nil, nil, fmt.Errorf("blockchain: unexpected HMMR root size %d", len(root))
+		return nil, nil, 0, fmt.Errorf("blockchain: unexpected HMMR root size %d", len(root))
 	}
 	var rootArr [hashSize]byte
 	copy(rootArr[:], root)
