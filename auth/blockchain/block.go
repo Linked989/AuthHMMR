@@ -46,21 +46,29 @@ type Block struct {
 }
 
 // BuildBlock assembles a block from the provided transactions, calculating the HMMR root.
-func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, opts hmmr.Options) (*Block, *hmmr.Metrics, error) {
+func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, leafSize int, opts hmmr.Options) (*Block, *hmmr.Metrics, error) {
 	if len(txs) == 0 {
 		return nil, nil, errors.New("blockchain: cannot create block with no transactions")
 	}
 
-	serialized := make([][]byte, len(txs))
-	for i := range txs {
-		serialized[i] = txBytesForHash(&txs[i])
+	if leafSize <= 0 {
+		return nil, nil, errors.New("blockchain: leafSize must be > 0")
 	}
 
+	var normalized [][]byte
 	if len(leaves) == 0 {
-		leaves = serialized
+		normalized = make([][]byte, len(txs))
+		for i := range txs {
+			normalized[i] = NormalizeLeaf(txBytesForHash(&txs[i]), leafSize)
+		}
+	} else {
+		normalized = make([][]byte, len(leaves))
+		for i := range leaves {
+			normalized[i] = NormalizeLeaf(leaves[i], leafSize)
+		}
 	}
 
-	tree, metrics, err := hmmr.BuildTree(leaves, opts)
+	tree, metrics, err := hmmr.BuildTree(normalized, opts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -86,6 +94,25 @@ func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, opts hmmr.Optio
 	}
 
 	return &Block{Header: header, Transactions: txs}, metrics, nil
+}
+
+// NormalizeLeaf returns a copy of data exactly leafSize bytes long.
+func NormalizeLeaf(data []byte, leafSize int) []byte {
+	if leafSize <= 0 {
+		leafSize = hashSize
+	}
+	if len(data) >= leafSize {
+		hash := sha256.Sum256(data)
+		buf := make([]byte, leafSize)
+		offset := 0
+		for offset < leafSize {
+			offset += copy(buf[offset:], hash[:])
+		}
+		return buf
+	}
+	buf := make([]byte, leafSize)
+	copy(buf, data)
+	return buf
 }
 
 // NewTransaction constructs a transaction with a deterministic identifier.

@@ -79,6 +79,7 @@ func main() {
 	blocksDir := flag.String("blocks-dir", BlocksDirectory, "directory where blocks are stored")
 	sensorLeavesTarget := flag.Int("sensor-leaves", 0, "desired number of sensor-data leaves per block (0 = auto)")
 	leafMode := flag.String("leaf-mode", "block", "leaf accumulation mode: 'block' (per block) or 'accumulate'")
+	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -86,6 +87,9 @@ func main() {
 	mode := strings.ToLower(strings.TrimSpace(*leafMode))
 	if mode != "block" && mode != "accumulate" {
 		log.Fatalf("invalid leaf-mode %q; use 'block' or 'accumulate'", *leafMode)
+	}
+	if *leafSize <= 0 {
+		log.Fatalf("leaf-size must be greater than zero")
 	}
 
 	iotDevs, err := loadIoTDevices(IoTDevicesJSON)
@@ -174,14 +178,14 @@ func main() {
 		sensorTarget = len(newlyAuthenticated)
 	}
 
-	newLeafPayloads, sensorTxs := generateSensorPayloads(newlyAuthenticated, sensorTarget)
+	newLeafPayloads, sensorTxs := generateSensorPayloads(newlyAuthenticated, sensorTarget, *leafSize)
 	transactions = append(transactions, sensorTxs...)
 
 	var leafPayloads [][]byte
 	leafPayloads = append(leafPayloads, newLeafPayloads...)
 
 	if mode == "accumulate" {
-		persisted, err := loadAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile))
+		persisted, err := loadAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), *leafSize)
 		if err != nil {
 			log.Fatalf("load accumulated leaves: %v", err)
 		}
@@ -193,7 +197,7 @@ func main() {
 	blockOpts := hmmr.Options{HashAlgorithm: *hmmrHashAlgorithm, CollectMetrics: *hmmrMetricsEnabled}
 
 	blockStart := time.Now()
-	block, hmmrMetrics, err := blockchain.BuildBlock(latestBlock, transactions, leafPayloads, blockOpts)
+	block, hmmrMetrics, err := blockchain.BuildBlock(latestBlock, transactions, leafPayloads, *leafSize, blockOpts)
 	if err != nil {
 		log.Fatalf("BuildBlock: %v", err)
 	}
@@ -220,9 +224,10 @@ func main() {
 		float64(buildDuration.Nanoseconds())/1e6,
 		float64(persistDuration.Nanoseconds())/1e6,
 	)
+	fmt.Printf("Leaf size in use: %d bytes\n", *leafSize)
 
 	if mode == "accumulate" && len(newLeafPayloads) > 0 {
-		if err := appendAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), newLeafPayloads); err != nil {
+		if err := appendAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), newLeafPayloads, *leafSize); err != nil {
 			log.Fatalf("append accumulated leaves: %v", err)
 		}
 	}
@@ -487,7 +492,7 @@ type sensorReading struct {
 	Sequence    int       `json:"sequence"`
 }
 
-func generateSensorPayloads(devices []SCDevice, target int) ([][]byte, []blockchain.Transaction) {
+func generateSensorPayloads(devices []SCDevice, target int, leafSize int) ([][]byte, []blockchain.Transaction) {
 	if len(devices) == 0 || target <= 0 {
 		return nil, nil
 	}
@@ -526,7 +531,8 @@ func generateSensorPayloads(devices []SCDevice, target int) ([][]byte, []blockch
 			if err != nil {
 				log.Fatalf("marshal sensor payload: %v", err)
 			}
-			leaves = append(leaves, payload)
+			leaf := blockchain.NormalizeLeaf(payload, leafSize)
+			leaves = append(leaves, leaf)
 			txs = append(txs, blockchain.NewTransaction("sensor_data", payload, time.Now()))
 		}
 	}
@@ -537,7 +543,7 @@ func roundFloat(v float64) float64 {
 	return math.Round(v*1000) / 1000
 }
 
-func loadAccumulatedLeaves(path string) ([][]byte, error) {
+func loadAccumulatedLeaves(path string, leafSize int) ([][]byte, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -558,7 +564,7 @@ func loadAccumulatedLeaves(path string) ([][]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode leaf: %w", err)
 		}
-		leaves = append(leaves, data)
+		leaves = append(leaves, blockchain.NormalizeLeaf(data, leafSize))
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
@@ -566,7 +572,7 @@ func loadAccumulatedLeaves(path string) ([][]byte, error) {
 	return leaves, nil
 }
 
-func appendAccumulatedLeaves(path string, leaves [][]byte) error {
+func appendAccumulatedLeaves(path string, leaves [][]byte, leafSize int) error {
 	if len(leaves) == 0 {
 		return nil
 	}
@@ -581,7 +587,8 @@ func appendAccumulatedLeaves(path string, leaves [][]byte) error {
 
 	writer := bufio.NewWriter(f)
 	for _, leaf := range leaves {
-		if _, err := writer.WriteString(base64.StdEncoding.EncodeToString(leaf) + "\n"); err != nil {
+		norm := blockchain.NormalizeLeaf(leaf, leafSize)
+		if _, err := writer.WriteString(base64.StdEncoding.EncodeToString(norm) + "\n"); err != nil {
 			return err
 		}
 	}
