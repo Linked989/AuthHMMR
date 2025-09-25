@@ -101,17 +101,12 @@ func NormalizeLeaf(data []byte, leafSize int) []byte {
 	if leafSize <= 0 {
 		leafSize = hashSize
 	}
-	if len(data) >= leafSize {
-		hash := sha256.Sum256(data)
-		buf := make([]byte, leafSize)
-		offset := 0
-		for offset < leafSize {
-			offset += copy(buf[offset:], hash[:])
-		}
-		return buf
-	}
+	digest := sha256.Sum256(data)
 	buf := make([]byte, leafSize)
-	copy(buf, data)
+	offset := 0
+	for offset < leafSize {
+		offset += copy(buf[offset:], digest[:])
+	}
 	return buf
 }
 

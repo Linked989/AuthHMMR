@@ -79,6 +79,7 @@ func main() {
 	blocksDir := flag.String("blocks-dir", BlocksDirectory, "directory where blocks are stored")
 	sensorLeavesTarget := flag.Int("sensor-leaves", 0, "desired number of sensor-data leaves per block (0 = auto)")
 	leafMode := flag.String("leaf-mode", "block", "leaf accumulation mode: 'block' (per block) or 'accumulate'")
+	sensorEnabled := flag.Bool("sensor-enabled", true, "include synthetic sensor payloads as additional leaves")
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	flag.Parse()
 
@@ -174,17 +175,23 @@ func main() {
 	}
 
 	sensorTarget := *sensorLeavesTarget
-	if sensorTarget <= 0 {
+	if !*sensorEnabled {
+		sensorTarget = 0
+	} else if sensorTarget <= 0 {
 		sensorTarget = len(newlyAuthenticated)
 	}
 
-	newLeafPayloads, sensorTxs := generateSensorPayloads(newlyAuthenticated, sensorTarget, *leafSize)
-	transactions = append(transactions, sensorTxs...)
+	var newLeafPayloads [][]byte
+	if *sensorEnabled && sensorTarget > 0 {
+		var sensorTxs []blockchain.Transaction
+		newLeafPayloads, sensorTxs = generateSensorPayloads(newlyAuthenticated, sensorTarget, *leafSize)
+		transactions = append(transactions, sensorTxs...)
+	}
 
 	var leafPayloads [][]byte
 	leafPayloads = append(leafPayloads, newLeafPayloads...)
 
-	if mode == "accumulate" {
+	if *sensorEnabled && mode == "accumulate" {
 		persisted, err := loadAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), *leafSize)
 		if err != nil {
 			log.Fatalf("load accumulated leaves: %v", err)
@@ -226,7 +233,7 @@ func main() {
 	)
 	fmt.Printf("Leaf size in use: %d bytes\n", *leafSize)
 
-	if mode == "accumulate" && len(newLeafPayloads) > 0 {
+	if *sensorEnabled && mode == "accumulate" && len(newLeafPayloads) > 0 {
 		if err := appendAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), newLeafPayloads, *leafSize); err != nil {
 			log.Fatalf("append accumulated leaves: %v", err)
 		}
@@ -243,8 +250,8 @@ func main() {
 		)
 	}
 
-	fmt.Printf("Sensor leaves generated this run: %d (target %d, mode %s)\n", len(newLeafPayloads), sensorTarget, mode)
-	if mode == "accumulate" {
+	fmt.Printf("Sensor leaves generated this run: %d (target %d, mode %s, enabled %t)\n", len(newLeafPayloads), sensorTarget, mode, *sensorEnabled)
+	if *sensorEnabled && mode == "accumulate" {
 		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
 
