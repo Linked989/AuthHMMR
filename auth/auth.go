@@ -203,12 +203,10 @@ func main() {
 
 	blockOpts := hmmr.Options{HashAlgorithm: *hmmrHashAlgorithm, CollectMetrics: *hmmrMetricsEnabled}
 
-	blockStart := time.Now()
-	block, hmmrMetrics, err := blockchain.BuildBlock(latestBlock, transactions, leafPayloads, *leafSize, blockOpts)
+	block, hmmrMetrics, buildDuration, err := blockchain.BuildBlock(latestBlock, transactions, leafPayloads, *leafSize, blockOpts)
 	if err != nil {
 		log.Fatalf("BuildBlock: %v", err)
 	}
-	buildDuration := time.Since(blockStart)
 
 	persistStart := time.Now()
 	path, err := blockchain.Persist(*blocksDir, block)
