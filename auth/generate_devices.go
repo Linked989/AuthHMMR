@@ -24,7 +24,7 @@ type IoTDevice struct {
 	ConfidenceLevel          float64 `json:"confidenceLevel"`          // Confidence in its vote (e.g., 1.0 means maximum confidence)
 	LastInteraction          string  `json:"lastInteraction"`          // Timestamp of last interaction (RFC3339 format)
 	SuspensionPeriod         uint    `json:"suspensionPeriod"`         // Suspension period (e.g., number of rounds suspended)
-	IsMalicious              bool    `json:"isMalicious"`              // Flag to indicate if the device is malicious
+	IsMalicious              bool    `json:"IsMalicious"`              // Flag to indicate if the device is malicious
 }
 
 // generateUUID creates a random alphanumeric string of specified length.

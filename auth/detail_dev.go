@@ -1,117 +1,69 @@
 package main
 
 import (
-	"context"
+	"encoding/json"
+	"flag"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"math/big"
-	"strings"
-
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
+	"os"
+	"time"
 )
 
-// SCDevice represents the Device struct from the Solidity contract
+const registeredDevicesFn = "sc_devices.json"
+
 type SCDevice struct {
-	UUID          string
-	Weight        *big.Int
-	Authenticated bool
+	UUID           string  `json:"uuid"`
+	TrustScore     float64 `json:"trustScore"`
+	HardwareScore  float64 `json:"hardwareScore"`
+	SecurityScore  float64 `json:"securityScore"`
+	Weight         float64 `json:"weight"`
+	Authenticated  bool    `json:"authenticated"`
+	LastActive     int64   `json:"lastActive"`
+	CorrectVotes   uint    `json:"correctVotes"`
+	IncorrectVotes uint    `json:"incorrectVotes"`
 }
 
 func main() {
-	// -----------------------------------------------------------------------------
-	// Configuration Variables
-	// -----------------------------------------------------------------------------
-	const (
-		SmartContractAddress = "0x048fB5fB2Ab72016CD561870b041cC5E97595C92" // Replace with your deployed contract address
-		RPCURL               = "http://127.0.0.1:8545"                      // Your RPC endpoint (Ganache)
-		ABIFilePath          = "abi.json"                                   // Path to your smart contract ABI
-	)
+	devicesPath := flag.String("devices", registeredDevicesFn, "path to registered devices JSON")
+	flag.Parse()
 
-	// -----------------------------------------------------------------------------
-	// 1. Load Smart Contract ABI
-	// -----------------------------------------------------------------------------
-	abiData, err := ioutil.ReadFile(ABIFilePath)
+	devices, err := loadDevices(*devicesPath)
 	if err != nil {
-		log.Fatalf("Failed to read ABI file (%s): %v", ABIFilePath, err)
-	}
-	contractABI, err := abi.JSON(strings.NewReader(string(abiData)))
-	if err != nil {
-		log.Fatalf("Failed to parse ABI: %v", err)
+		log.Fatalf("load devices: %v", err)
 	}
 
-	// -----------------------------------------------------------------------------
-	// 2. Connect to Ethereum Node
-	// -----------------------------------------------------------------------------
-	client, err := ethclient.Dial(RPCURL)
-	if err != nil {
-		log.Fatalf("Failed to connect to Ethereum node: %v", err)
-	}
-	defer client.Close()
-	log.Println("Connected to Ethereum node.")
-
-	// -----------------------------------------------------------------------------
-	// 3. Prepare the Call Data for getAllDevices()
-	// -----------------------------------------------------------------------------
-	getAllDevicesFn, exists := contractABI.Methods["getAllDevices"]
-	if !exists {
-		log.Fatalf("ABI does not contain getAllDevices function")
-	}
-	callData := getAllDevicesFn.ID // Method ID for getAllDevices()
-
-	// -----------------------------------------------------------------------------
-	// 4. Create Call Message
-	// -----------------------------------------------------------------------------
-	scAddr := common.HexToAddress(SmartContractAddress)
-	msg := ethereum.CallMsg{
-		To:   &scAddr,
-		Data: callData,
-	}
-
-	// -----------------------------------------------------------------------------
-	// 5. Call the Contract
-	// -----------------------------------------------------------------------------
-	raw, err := client.CallContract(context.Background(), msg, nil)
-	if err != nil {
-		log.Fatalf("Failed to call getAllDevices: %v", err)
-	}
-
-	// -----------------------------------------------------------------------------
-	// 6. Unpack the Returned Data
-	// -----------------------------------------------------------------------------
-	var scDevices []SCDevice
-	err = contractABI.UnpackIntoInterface(&scDevices, "getAllDevices", raw)
-	if err != nil {
-		log.Fatalf("Failed to unpack getAllDevices return: %v", err)
-	}
-
-	// -----------------------------------------------------------------------------
-	// 7. Display Device Information
-	// -----------------------------------------------------------------------------
-	totalDevices := len(scDevices)
-	unauthenticatedDevices := 0
-	authenticatedDevices := 0
-
-	fmt.Printf("Total Registered Devices: %d\n", totalDevices)
-	fmt.Println("List of Devices:")
-	for i, dev := range scDevices {
-		fmt.Printf("%d. UUID: %s, Weight: %s, Authenticated: %t\n",
-			i+1, dev.UUID, dev.Weight.String(), dev.Authenticated)
+	total := len(devices)
+	authCount := 0
+	for _, dev := range devices {
 		if dev.Authenticated {
-			authenticatedDevices++
-		} else {
-			unauthenticatedDevices++
+			authCount++
 		}
 	}
 
-	// -----------------------------------------------------------------------------
-	// 8. Summary
-	// -----------------------------------------------------------------------------
+	fmt.Printf("Total Registered Devices: %d\n", total)
+	fmt.Println("List of Devices:")
+	for i, dev := range devices {
+		lastActive := "never"
+		if dev.LastActive != 0 {
+			lastActive = time.Unix(0, dev.LastActive).UTC().Format(time.RFC3339)
+		}
+		fmt.Printf("%d. UUID: %s, Weight: %.2f, Authenticated: %t, LastActive: %s, CorrectVotes: %d, IncorrectVotes: %d\n",
+			i+1, dev.UUID, dev.Weight, dev.Authenticated, lastActive, dev.CorrectVotes, dev.IncorrectVotes)
+	}
+
 	fmt.Println("\nSummary:")
-	fmt.Printf("Total Devices: %d\n", totalDevices)
-	fmt.Printf("Authenticated Devices: %d\n", authenticatedDevices)
-	fmt.Printf("Unauthenticated Devices: %d\n", unauthenticatedDevices)
+	fmt.Printf("Authenticated Devices: %d\n", authCount)
+	fmt.Printf("Unauthenticated Devices: %d\n", total-authCount)
+}
+
+func loadDevices(path string) ([]SCDevice, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var devices []SCDevice
+	if err := json.Unmarshal(data, &devices); err != nil {
+		return nil, err
+	}
+	return devices, nil
 }
