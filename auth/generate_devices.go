@@ -1,12 +1,12 @@
 package main
 
 import (
-	"crypto/rand"
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
-	"math/rand"
+	mrand "math/rand"
 	"os"
 	"time"
 )
@@ -30,7 +30,7 @@ type IoTDevice struct {
 
 func main() {
 	const deviceCount = 10
-	rand.Seed(time.Now().UnixNano())
+	mrand.Seed(time.Now().UnixNano())
 
 	devices := make([]IoTDevice, deviceCount)
 	for i := 0; i < deviceCount; i++ {
@@ -44,7 +44,7 @@ func main() {
 			log.Fatalf("generate weight: %v", err)
 		}
 
-		trust := rounded(rand.Float64()*40 + 60) // 60.000000 - 100.000000
+		trust := rounded(mrand.Float64()*40 + 60) // 60.000000 - 100.000000
 		totalVotes := randInt(15, 45)
 		incorrectVotes := randInt(0, totalVotes/4+1)
 		correctVotes := totalVotes - incorrectVotes
@@ -54,7 +54,7 @@ func main() {
 			lastResult = "Rejected"
 		}
 
-		confidence := rounded(rand.Float64()*0.2 + 0.8) // 0.800000 - 1.000000
+		confidence := rounded(mrand.Float64()*0.2 + 0.8) // 0.800000 - 1.000000
 
 		devices[i] = IoTDevice{
 			UUID:                     uuid,
@@ -69,7 +69,7 @@ func main() {
 			ConfidenceLevel:          confidence,
 			LastInteraction:          time.Now().Format(time.RFC3339),
 			SuspensionPeriod:         0,
-			IsMalicious:              rand.Intn(4) == 0,
+			IsMalicious:              mrand.Intn(4) == 0,
 		}
 	}
 
@@ -82,7 +82,7 @@ func main() {
 func generateUUID(length int) (string, error) {
 	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	bytes := make([]byte, length)
-	if _, err := rand.Read(bytes); err != nil {
+	if _, err := crand.Read(bytes); err != nil {
 		return "", fmt.Errorf("random bytes: %w", err)
 	}
 	for i := range bytes {
@@ -96,7 +96,7 @@ func randUint(min, max uint) (uint, error) {
 		return 0, fmt.Errorf("invalid range %d-%d", min, max)
 	}
 	diff := max - min + 1
-	n, err := rand.Int(rand.Reader, big.NewInt(int64(diff)))
+	n, err := crand.Int(crand.Reader, big.NewInt(int64(diff)))
 	if err != nil {
 		return 0, err
 	}
@@ -107,7 +107,7 @@ func randInt(min, max int) int {
 	if max <= min {
 		return min
 	}
-	return rand.Intn(max-min) + min
+	return mrand.Intn(max-min) + min
 }
 
 func rounded(v float64) float64 {
