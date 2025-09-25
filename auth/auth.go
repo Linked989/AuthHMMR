@@ -188,7 +188,7 @@ func main() {
 		transactions = append(transactions, sensorTxs...)
 	}
 
-	var leafPayloads [][]byte
+	leafPayloads := blockchain.LeavesFromTransactions(transactions, *leafSize)
 	leafPayloads = append(leafPayloads, newLeafPayloads...)
 
 	if *sensorEnabled && mode == "accumulate" {

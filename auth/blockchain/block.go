@@ -55,21 +55,12 @@ func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, leafSize int, o
 		return nil, nil, 0, errors.New("blockchain: leafSize must be > 0")
 	}
 
-	var normalized [][]byte
 	if len(leaves) == 0 {
-		normalized = make([][]byte, len(txs))
-		for i := range txs {
-			normalized[i] = NormalizeLeaf(txBytesForHash(&txs[i]), leafSize)
-		}
-	} else {
-		normalized = make([][]byte, len(leaves))
-		for i := range leaves {
-			normalized[i] = NormalizeLeaf(leaves[i], leafSize)
-		}
+		return nil, nil, 0, errors.New("blockchain: no leaves supplied for HMMR build")
 	}
 
 	buildStart := time.Now()
-	tree, metrics, err := hmmr.BuildTree(normalized, opts)
+	tree, metrics, err := hmmr.BuildTree(leaves, opts)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -96,6 +87,15 @@ func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, leafSize int, o
 	}
 
 	return &Block{Header: header, Transactions: txs}, metrics, buildDuration, nil
+}
+
+// LeavesFromTransactions derives normalized leaves from transactions.
+func LeavesFromTransactions(txs []Transaction, leafSize int) [][]byte {
+	leaves := make([][]byte, len(txs))
+	for i := range txs {
+		leaves[i] = NormalizeLeaf(txBytesForHash(&txs[i]), leafSize)
+	}
+	return leaves
 }
 
 // NormalizeLeaf returns a copy of data exactly leafSize bytes long.
