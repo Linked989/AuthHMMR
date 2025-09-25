@@ -6,115 +6,122 @@ import (
 	"fmt"
 	"log"
 	"math/big"
+	"math/rand"
 	"os"
 	"time"
 )
 
-// IoTDevice holds off-chain data about a device (voter)
+// IoTDevice models the off-chain voter metadata.
 type IoTDevice struct {
-	UUID                     string  `json:"uuid"`                     // Unique identifier
-	Weight                   uint    `json:"weight"`                   // Reputation/weight, influences voting power
-	TrustScore               uint    `json:"trustScore"`               // Composite trust score (initially set to 50)
-	LastVoteOutcome          bool    `json:"lastVoteOutcome"`          // Outcome of the last vote (true if correct)
-	IncorrectVoteStreak      uint    `json:"incorrectVoteStreak"`      // Number of consecutive incorrect votes
-	TotalVotesCast           uint    `json:"totalVotesCast"`           // Total votes cast by this device
-	CorrectVoteCount         uint    `json:"correctVoteCount"`         // Count of correct votes
-	IncorrectVoteCount       uint    `json:"incorrectVoteCount"`       // Count of incorrect votes
-	LastAuthenticationResult string  `json:"lastAuthenticationResult"` // Result of last authentication ("Authenticated", "Rejected", etc.)
-	ConfidenceLevel          float64 `json:"confidenceLevel"`          // Confidence in its vote (e.g., 1.0 means maximum confidence)
-	LastInteraction          string  `json:"lastInteraction"`          // Timestamp of last interaction (RFC3339 format)
-	SuspensionPeriod         uint    `json:"suspensionPeriod"`         // Suspension period (e.g., number of rounds suspended)
-	IsMalicious              bool    `json:"IsMalicious"`              // Flag to indicate if the device is malicious
+	UUID                     string  `json:"uuid"`
+	Weight                   uint    `json:"weight"`
+	TrustScore               float64 `json:"trustScore"`
+	LastVoteOutcome          bool    `json:"lastVoteOutcome"`
+	IncorrectVoteStreak      uint    `json:"incorrectVoteStreak"`
+	TotalVotesCast           uint    `json:"totalVotesCast"`
+	CorrectVoteCount         uint    `json:"correctVoteCount"`
+	IncorrectVoteCount       uint    `json:"incorrectVoteCount"`
+	LastAuthenticationResult string  `json:"lastAuthenticationResult"`
+	ConfidenceLevel          float64 `json:"confidenceLevel"`
+	LastInteraction          string  `json:"lastInteraction"`
+	SuspensionPeriod         uint    `json:"suspensionPeriod"`
+	IsMalicious              bool    `json:"IsMalicious"`
 }
 
-// generateUUID creates a random alphanumeric string of specified length.
+func main() {
+	const deviceCount = 10
+	rand.Seed(time.Now().UnixNano())
+
+	devices := make([]IoTDevice, deviceCount)
+	for i := 0; i < deviceCount; i++ {
+		uuid, err := generateUUID(8)
+		if err != nil {
+			log.Fatalf("generate UUID: %v", err)
+		}
+
+		weight, err := randUint(70, 95)
+		if err != nil {
+			log.Fatalf("generate weight: %v", err)
+		}
+
+		trust := rounded(rand.Float64()*40 + 60) // 60.000000 - 100.000000
+		totalVotes := randInt(15, 45)
+		incorrectVotes := randInt(0, totalVotes/4+1)
+		correctVotes := totalVotes - incorrectVotes
+		lastOutcome := incorrectVotes == 0
+		lastResult := "Authenticated"
+		if !lastOutcome {
+			lastResult = "Rejected"
+		}
+
+		confidence := rounded(rand.Float64()*0.2 + 0.8) // 0.800000 - 1.000000
+
+		devices[i] = IoTDevice{
+			UUID:                     uuid,
+			Weight:                   weight,
+			TrustScore:               trust,
+			LastVoteOutcome:          lastOutcome,
+			IncorrectVoteStreak:      uint(randInt(0, 3)),
+			TotalVotesCast:           uint(totalVotes),
+			CorrectVoteCount:         uint(correctVotes),
+			IncorrectVoteCount:       uint(incorrectVotes),
+			LastAuthenticationResult: lastResult,
+			ConfidenceLevel:          confidence,
+			LastInteraction:          time.Now().Format(time.RFC3339),
+			SuspensionPeriod:         0,
+			IsMalicious:              rand.Intn(4) == 0,
+		}
+	}
+
+	if err := writeDevices("iot_devices.json", devices); err != nil {
+		log.Fatalf("write devices: %v", err)
+	}
+	log.Printf("Generated %d IoT devices and saved to iot_devices.json\n", len(devices))
+}
+
 func generateUUID(length int) (string, error) {
 	const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {
-		return "", fmt.Errorf("failed to generate random bytes: %v", err)
+		return "", fmt.Errorf("random bytes: %w", err)
 	}
-	for i := 0; i < length; i++ {
+	for i := range bytes {
 		bytes[i] = letters[bytes[i]%byte(len(letters))]
 	}
 	return string(bytes), nil
 }
 
-// randWeight returns a random uint in [min..max].
-func randWeight(min, max uint) (uint, error) {
+func randUint(min, max uint) (uint, error) {
 	if min > max {
-		return 0, fmt.Errorf("invalid range: min=%d > max=%d", min, max)
+		return 0, fmt.Errorf("invalid range %d-%d", min, max)
 	}
 	diff := max - min + 1
-	bdiff := big.NewInt(int64(diff))
-	n, err := rand.Int(rand.Reader, bdiff)
+	n, err := rand.Int(rand.Reader, big.NewInt(int64(diff)))
 	if err != nil {
 		return 0, err
 	}
 	return min + uint(n.Int64()), nil
 }
 
-func main() {
-	// Number of IoT devices to generate
-	const numDevices = 4
-
-	// We'll store them in a slice
-	devices := make([]IoTDevice, numDevices)
-
-	// For each device: random UUID, random weight [10..100], initial trust=50 and other attributes
-	for i := 0; i < numDevices; i++ {
-		uid, err := generateUUID(8)
-		if err != nil {
-			log.Fatalf("Failed to generate UUID: %v", err)
-		}
-
-		// Random weight in [10..100]
-		w, err := randWeight(75, 99)
-		if err != nil {
-			log.Fatalf("Failed to generate weight: %v", err)
-
-		}
-
-		// Random trust score in [1..100]
-		t, err := randWeight(1, 99)
-		if err != nil {
-			log.Fatalf(("Failed to generate trustL %v"), err)
-		}
-		// Randomly assign malicious flag: For example, 50% chance of being malicious
-		isMalicious := false // Alternate between true/false, can be modified for more randomness
-
-		// Use current time as the last interaction timestamp
-		currentTime := time.Now().Format(time.RFC3339)
-
-		devices[i] = IoTDevice{
-			UUID:                     uid,
-			Weight:                   w,
-			TrustScore:               t,    // initial trust
-			LastVoteOutcome:          true, // default: assume correct for first vote
-			IncorrectVoteStreak:      0,
-			TotalVotesCast:           0,
-			CorrectVoteCount:         0,
-			IncorrectVoteCount:       0,
-			LastAuthenticationResult: "NotAttempted", // no authentication yet
-			ConfidenceLevel:          1.0,            // maximum confidence initially
-			LastInteraction:          currentTime,
-			SuspensionPeriod:         0,
-			IsMalicious:              isMalicious, // Set the isMalicious flag
-		}
+func randInt(min, max int) int {
+	if max <= min {
+		return min
 	}
+	return rand.Intn(max-min) + min
+}
 
-	// Write the generated devices to a JSON file.
-	f, err := os.Create("iot_devices.json")
+func rounded(v float64) float64 {
+	return float64(int(v*1_000_000)) / 1_000_000
+}
+
+func writeDevices(path string, devices []IoTDevice) error {
+	file, err := os.Create(path)
 	if err != nil {
-		log.Fatalf("Failed to create iot_devices.json: %v", err)
+		return err
 	}
-	defer f.Close()
+	defer file.Close()
 
-	enc := json.NewEncoder(f)
+	enc := json.NewEncoder(file)
 	enc.SetIndent("", "  ")
-	if err := enc.Encode(devices); err != nil {
-		log.Fatalf("Failed to encode JSON: %v", err)
-	}
-
-	log.Printf("Generated %d IoT devices and saved to iot_devices.json\n", numDevices)
+	return enc.Encode(devices)
 }

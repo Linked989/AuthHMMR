@@ -46,7 +46,7 @@ type Block struct {
 }
 
 // BuildBlock assembles a block from the provided transactions, calculating the HMMR root.
-func BuildBlock(prev *Block, txs []Transaction, opts hmmr.Options) (*Block, *hmmr.Metrics, error) {
+func BuildBlock(prev *Block, txs []Transaction, leaves [][]byte, opts hmmr.Options) (*Block, *hmmr.Metrics, error) {
 	if len(txs) == 0 {
 		return nil, nil, errors.New("blockchain: cannot create block with no transactions")
 	}
@@ -56,7 +56,11 @@ func BuildBlock(prev *Block, txs []Transaction, opts hmmr.Options) (*Block, *hmm
 		serialized[i] = txBytesForHash(&txs[i])
 	}
 
-	tree, metrics, err := hmmr.BuildTree(serialized, opts)
+	if len(leaves) == 0 {
+		leaves = serialized
+	}
+
+	tree, metrics, err := hmmr.BuildTree(leaves, opts)
 	if err != nil {
 		return nil, nil, err
 	}

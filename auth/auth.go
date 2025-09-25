@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -8,6 +10,8 @@ import (
 	"math"
 	mr "math/rand"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +26,7 @@ const (
 	IoTDevicesJSON        = "iot_devices.json"
 	RegisteredDevicesJSON = "sc_devices.json"
 	BlocksDirectory       = "blocks"
+	SensorLeavesFile      = "sensor_leaves.b64"
 )
 
 // IoTDevice represents an off-chain voter.
@@ -72,9 +77,16 @@ func main() {
 	hmmrHashAlgorithm := flag.String("hmmr-hash", "sha256", "hash algorithm for HMMR leaves (sha256)")
 	devicesPath := flag.String("devices", RegisteredDevicesJSON, "path to registered devices JSON")
 	blocksDir := flag.String("blocks-dir", BlocksDirectory, "directory where blocks are stored")
+	sensorLeavesTarget := flag.Int("sensor-leaves", 0, "desired number of sensor-data leaves per block (0 = auto)")
+	leafMode := flag.String("leaf-mode", "block", "leaf accumulation mode: 'block' (per block) or 'accumulate'")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
+
+	mode := strings.ToLower(strings.TrimSpace(*leafMode))
+	if mode != "block" && mode != "accumulate" {
+		log.Fatalf("invalid leaf-mode %q; use 'block' or 'accumulate'", *leafMode)
+	}
 
 	iotDevs, err := loadIoTDevices(IoTDevicesJSON)
 	if err != nil {
@@ -106,6 +118,7 @@ func main() {
 	commCostBytes := make([]int, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
+	var newlyAuthenticated []SCDevice
 
 	latestBlock, err := blockchain.LoadLatest(*blocksDir)
 	if err != nil {
@@ -135,6 +148,7 @@ func main() {
 		if authenticate {
 			scDevices[scIdx].Authenticated = true
 			scDevices[scIdx].CorrectVotes++
+			newlyAuthenticated = append(newlyAuthenticated, scDevices[scIdx])
 		} else {
 			scDevices[scIdx].IncorrectVotes++
 		}
@@ -155,10 +169,31 @@ func main() {
 		return
 	}
 
+	sensorTarget := *sensorLeavesTarget
+	if sensorTarget <= 0 {
+		sensorTarget = len(newlyAuthenticated)
+	}
+
+	newLeafPayloads, sensorTxs := generateSensorPayloads(newlyAuthenticated, sensorTarget)
+	transactions = append(transactions, sensorTxs...)
+
+	var leafPayloads [][]byte
+	leafPayloads = append(leafPayloads, newLeafPayloads...)
+
+	if mode == "accumulate" {
+		persisted, err := loadAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile))
+		if err != nil {
+			log.Fatalf("load accumulated leaves: %v", err)
+		}
+		if len(persisted) > 0 {
+			leafPayloads = append(persisted, leafPayloads...)
+		}
+	}
+
 	blockOpts := hmmr.Options{HashAlgorithm: *hmmrHashAlgorithm, CollectMetrics: *hmmrMetricsEnabled}
 
 	blockStart := time.Now()
-	block, hmmrMetrics, err := blockchain.BuildBlock(latestBlock, transactions, blockOpts)
+	block, hmmrMetrics, err := blockchain.BuildBlock(latestBlock, transactions, leafPayloads, blockOpts)
 	if err != nil {
 		log.Fatalf("BuildBlock: %v", err)
 	}
@@ -186,6 +221,12 @@ func main() {
 		float64(persistDuration.Nanoseconds())/1e6,
 	)
 
+	if mode == "accumulate" && len(newLeafPayloads) > 0 {
+		if err := appendAccumulatedLeaves(filepath.Join(*blocksDir, SensorLeavesFile), newLeafPayloads); err != nil {
+			log.Fatalf("append accumulated leaves: %v", err)
+		}
+	}
+
 	if hmmrMetrics != nil {
 		fmt.Printf("HMMR Metrics — Leaves: %d, BuildTime: %.3f ms, ProofTime: %.3f ms, ProofSize: %d bytes, Depth: %d, MemoryUsed: %d bytes\n",
 			hmmrMetrics.LeafCount,
@@ -195,6 +236,11 @@ func main() {
 			hmmrMetrics.Depth,
 			hmmrMetrics.MemoryUsedBytes,
 		)
+	}
+
+	fmt.Printf("Sensor leaves generated this run: %d (target %d, mode %s)\n", len(newLeafPayloads), sensorTarget, mode)
+	if mode == "accumulate" {
+		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
@@ -430,4 +476,114 @@ func buildTransactionPayload(uuid string, outcome bool, yesVotes, noVotes int, v
 		log.Fatalf("marshal auth transaction: %v", err)
 	}
 	return data
+}
+
+type sensorReading struct {
+	DeviceUUID  string    `json:"device_uuid"`
+	Timestamp   time.Time `json:"timestamp"`
+	Temperature float64   `json:"temperature"`
+	Humidity    float64   `json:"humidity"`
+	Battery     float64   `json:"battery"`
+	Sequence    int       `json:"sequence"`
+}
+
+func generateSensorPayloads(devices []SCDevice, target int) ([][]byte, []blockchain.Transaction) {
+	if len(devices) == 0 || target <= 0 {
+		return nil, nil
+	}
+	if target < len(devices) {
+		target = len(devices)
+	}
+
+	perDevice := target / len(devices)
+	remainder := target % len(devices)
+	if perDevice == 0 {
+		perDevice = 1
+		remainder = 0
+	}
+
+	leaves := make([][]byte, 0, target)
+	txs := make([]blockchain.Transaction, 0, target)
+	sequence := 1
+
+	for _, dev := range devices {
+		count := perDevice
+		if remainder > 0 {
+			count++
+			remainder--
+		}
+		for i := 0; i < count; i++ {
+			reading := sensorReading{
+				DeviceUUID:  dev.UUID,
+				Timestamp:   time.Now().UTC(),
+				Temperature: roundFloat(15 + mr.Float64()*15),
+				Humidity:    roundFloat(40 + mr.Float64()*40),
+				Battery:     roundFloat(20 + mr.Float64()*80),
+				Sequence:    sequence,
+			}
+			sequence++
+			payload, err := json.Marshal(reading)
+			if err != nil {
+				log.Fatalf("marshal sensor payload: %v", err)
+			}
+			leaves = append(leaves, payload)
+			txs = append(txs, blockchain.NewTransaction("sensor_data", payload, time.Now()))
+		}
+	}
+	return leaves, txs
+}
+
+func roundFloat(v float64) float64 {
+	return math.Round(v*1000) / 1000
+}
+
+func loadAccumulatedLeaves(path string) ([][]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	leaves := make([][]byte, 0)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(line)
+		if err != nil {
+			return nil, fmt.Errorf("decode leaf: %w", err)
+		}
+		leaves = append(leaves, data)
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return leaves, nil
+}
+
+func appendAccumulatedLeaves(path string, leaves [][]byte) error {
+	if len(leaves) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	writer := bufio.NewWriter(f)
+	for _, leaf := range leaves {
+		if _, err := writer.WriteString(base64.StdEncoding.EncodeToString(leaf) + "\n"); err != nil {
+			return err
+		}
+	}
+	return writer.Flush()
 }
