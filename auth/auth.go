@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
@@ -105,6 +106,16 @@ func main() {
 	}
 	log.Printf("Registered devices available: %d", len(scDevices))
 
+	besu, err := newBesuClientFromEnv()
+	if err != nil {
+		log.Fatalf("init besu client: %v", err)
+	}
+	if besu != nil {
+		if err := besu.syncRegisteredDevices(context.Background(), scDevices); err != nil {
+			log.Fatalf("sync registered devices: %v", err)
+		}
+	}
+
 	indexByUUID := make(map[string]int, len(scDevices))
 	var unauth []SCDevice
 	for i, dev := range scDevices {
@@ -163,6 +174,15 @@ func main() {
 		payload := buildTransactionPayload(dev.UUID, authenticate, yesCnt, tot-yesCnt, yesMap)
 		commCostBytes = append(commCostBytes, len(payload))
 		transactions = append(transactions, blockchain.NewTransaction("auth_result", payload, time.Now()))
+
+		if besu != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			err := besu.authenticateDevice(ctx, dev.UUID, authenticate)
+			cancel()
+			if err != nil {
+				log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+			}
+		}
 	}
 
 	if err := saveRegisteredDevices(*devicesPath, scDevices); err != nil {
