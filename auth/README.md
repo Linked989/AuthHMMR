@@ -32,6 +32,9 @@ Besu integration
 - Required when enabled: BESU_RPC_URL, PRIVATE_KEY. Optional: CHAIN_ID.
 - When enabled, auth will ensure registered devices are added on-chain and each authentication result is submitted.
 
+Comand:
+npx hardhat run scripts/deploy_auth_hmmr.js --network besu
+
 auth.go flags
 - -devices: path to registered devices JSON (default: sc_devices.json)
 - -blocks-dir: output directory for block files (default: blocks)
@@ -48,3 +51,6 @@ Makefile
 - make register: generate registered devices (sc_devices.json)
 - make auth: run authentication and block build
 - make detail: show registered device summary
+
+
+
