@@ -1,6 +1,6 @@
 // Update these before running.
 const RPC_URL = "http://127.0.0.1:8545"; // Besu RPC endpoint
-const PRIVATE_KEY = "0xYOUR_PRIVATE_KEY"; // Deployer private key
+const PRIVATE_KEY = "0x8f2a55949038a9610f50fb23b5883af3b4ecb3c3bb792cbcefbd1542c692be63"; // Deployer private key
 const ALPHA = 1;
 const BETA = 1;
 const GAMMA = 1;
@@ -18,7 +18,7 @@ async function main() {
     throw new Error("Set PRIVATE_KEY at the top of scripts/deploy.js");
   }
 
-  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
   const deployer = new ethers.Wallet(PRIVATE_KEY, provider);
 
   console.log("Deployer address: ", deployer.address);
