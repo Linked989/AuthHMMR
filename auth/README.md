@@ -17,6 +17,9 @@ Quickstart
    go run ./cmd/auth
 4) Optional: show device summary.
    go run ./cmd/detail-dev
+5) Query devices from the smart contract.
+   go run ./cmd/query-devices
+   go run ./cmd/query-devices -authenticated
 
 Alternative runner
 - python3 scripts/run_all.py
@@ -32,6 +35,7 @@ Besu integration
 - Required when enabled: BESU_RPC_URL, PRIVATE_KEY. Optional: CHAIN_ID.
 - When enabled, auth will ensure registered devices are added on-chain and each authentication result is submitted.
 - You can store these in `.env` and `auth` will auto-load them at startup.
+- `cmd/reg` will also register devices on-chain when CONTRACT_ADDRESS is set.
 
 Comand:
 npx hardhat run scripts/deploy_auth_hmmr.js --network besu
@@ -52,5 +56,4 @@ Makefile
 - make register: generate registered devices (sc_devices.json)
 - make auth: run authentication and block build
 - make detail: show registered device summary
-
 

@@ -1,13 +1,20 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+	"math"
+	"math/big"
 	"math/rand"
 	"os"
 	"time"
+
+	"auth/internal/besu"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -29,6 +36,7 @@ type Device struct {
 }
 
 func main() {
+	_ = godotenv.Load()
 	count := flag.Int("n", defaultDeviceCount, "number of devices to generate")
 	uuidLen := flag.Int("uuid-length", defaultUUIDLength, "length of generated UUIDs")
 	outPath := flag.String("out", registeredDevicesFn, "output JSON for registered devices")
@@ -65,6 +73,29 @@ func main() {
 	}
 
 	fmt.Printf("Generated %d registered devices into %s\n", len(devices), *outPath)
+
+	besuClient, err := besu.NewClientFromEnv()
+	if err != nil {
+		log.Fatalf("init besu client: %v", err)
+	}
+	if besuClient == nil {
+		return
+	}
+
+	for i := range devices {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_, err := besuClient.AddDevice(
+			ctx,
+			devices[i].UUID,
+			scoreToUint(devices[i].TrustScore),
+			scoreToUint(devices[i].HardwareScore),
+			scoreToUint(devices[i].SecurityScore),
+		)
+		cancel()
+		if err != nil {
+			log.Fatalf("register device %s on besu: %v", devices[i].UUID, err)
+		}
+	}
 }
 
 func mustGenerateUUID(length int) string {
@@ -84,4 +115,12 @@ func randIntRange(min, max int) int {
 		return min
 	}
 	return rand.Intn(max-min+1) + min
+}
+
+func scoreToUint(score float64) *big.Int {
+	rounded := int64(math.Round(score))
+	if rounded < 0 {
+		rounded = 0
+	}
+	return big.NewInt(rounded)
 }

@@ -1,4 +1,4 @@
-package main
+package besu
 
 import (
 	"context"
@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"math/big"
 	"os"
 	"strings"
@@ -23,17 +22,27 @@ const deviceRegistryABI = `[
   {"inputs":[{"internalType":"uint256","name":"_alpha","type":"uint256"},{"internalType":"uint256","name":"_beta","type":"uint256"},{"internalType":"uint256","name":"_gamma","type":"uint256"}],"stateMutability":"nonpayable","type":"constructor"},
   {"inputs":[{"internalType":"string","name":"_uuid","type":"string"},{"internalType":"uint256","name":"_trustScore","type":"uint256"},{"internalType":"uint256","name":"_hardwareScore","type":"uint256"},{"internalType":"uint256","name":"_securityScore","type":"uint256"}],"name":"addDevice","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"string","name":"_uuid","type":"string"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"authenticateDevice","outputs":[],"stateMutability":"nonpayable","type":"function"},
-  {"inputs":[{"internalType":"string","name":"_uuid","type":"string"}],"name":"getDeviceDetails","outputs":[{"internalType":"string","name":"","type":"string"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"}
+  {"inputs":[{"internalType":"string","name":"_uuid","type":"string"}],"name":"getDeviceDetails","outputs":[{"internalType":"string","name":"","type":"string"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[],"name":"getAllDevices","outputs":[{"components":[{"internalType":"string","name":"uuid","type":"string"},{"internalType":"uint256","name":"trustScore","type":"uint256"},{"internalType":"uint256","name":"hardwareScore","type":"uint256"},{"internalType":"uint256","name":"securityScore","type":"uint256"},{"internalType":"uint256","name":"weight","type":"uint256"},{"internalType":"bool","name":"authenticated","type":"bool"}],"internalType":"struct DeviceRegistry.Device[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"}
 ]`
 
-type besuClient struct {
+type Client struct {
 	client   *ethclient.Client
 	contract *bind.BoundContract
 	txOpts   *bind.TransactOpts
 	callOpts *bind.CallOpts
 }
 
-func newBesuClientFromEnv() (*besuClient, error) {
+type Device struct {
+	UUID          string
+	TrustScore    *big.Int
+	HardwareScore *big.Int
+	SecurityScore *big.Int
+	Weight        *big.Int
+	Authenticated bool
+}
+
+func NewClientFromEnv() (*Client, error) {
 	contractAddr := strings.TrimSpace(os.Getenv("CONTRACT_ADDRESS"))
 	if contractAddr == "" {
 		return nil, nil
@@ -79,7 +88,7 @@ func newBesuClientFromEnv() (*besuClient, error) {
 	}
 
 	log.Printf("Besu enabled: contract %s rpc %s", addr.Hex(), rpcURL)
-	return &besuClient{
+	return &Client{
 		client:   client,
 		contract: contract,
 		txOpts:   txOpts,
@@ -109,48 +118,9 @@ func resolveChainID(client *ethclient.Client) (*big.Int, error) {
 	return id, nil
 }
 
-func (c *besuClient) syncRegisteredDevices(ctx context.Context, devices []SCDevice) error {
-	for _, dev := range devices {
-		if err := c.ensureDeviceRegistered(ctx, dev); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *besuClient) ensureDeviceRegistered(ctx context.Context, dev SCDevice) error {
-	callCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	_, err := c.getDeviceDetails(callCtx, dev.UUID)
-	if err == nil {
-		return nil
-	}
-	txCtx, txCancel := context.WithTimeout(ctx, 30*time.Second)
-	defer txCancel()
-	_, err = c.addDevice(txCtx, dev)
-	return err
-}
-
-func (c *besuClient) authenticateDevice(ctx context.Context, uuid string, status bool) error {
+func (c *Client) AddDevice(ctx context.Context, uuid string, trust, hardware, security *big.Int) (common.Hash, error) {
 	c.txOpts.Context = ctx
-	tx, err := c.contract.Transact(c.txOpts, "authenticateDevice", uuid, status)
-	if err != nil {
-		return err
-	}
-	_, err = bind.WaitMined(ctx, c.client, tx)
-	return err
-}
-
-func (c *besuClient) addDevice(ctx context.Context, dev SCDevice) (common.Hash, error) {
-	c.txOpts.Context = ctx
-	tx, err := c.contract.Transact(
-		c.txOpts,
-		"addDevice",
-		dev.UUID,
-		uint64(math.Round(dev.TrustScore)),
-		uint64(math.Round(dev.HardwareScore)),
-		uint64(math.Round(dev.SecurityScore)),
-	)
+	tx, err := c.contract.Transact(c.txOpts, "addDevice", uuid, trust, hardware, security)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -161,19 +131,39 @@ func (c *besuClient) addDevice(ctx context.Context, dev SCDevice) (common.Hash, 
 	return tx.Hash(), nil
 }
 
-func (c *besuClient) getDeviceDetails(ctx context.Context, uuid string) (string, error) {
-	c.callOpts.Context = ctx
-	var out []interface{}
-	err := c.contract.Call(c.callOpts, &out, "getDeviceDetails", uuid)
+func (c *Client) AuthenticateDevice(ctx context.Context, uuid string, status bool) error {
+	c.txOpts.Context = ctx
+	tx, err := c.contract.Transact(c.txOpts, "authenticateDevice", uuid, status)
 	if err != nil {
-		return "", err
+		return err
 	}
-	if len(out) == 0 {
-		return "", errors.New("empty response")
+	_, err = bind.WaitMined(ctx, c.client, tx)
+	return err
+}
+
+func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
+	c.callOpts.Context = ctx
+	var out []struct {
+		UUID          string
+		TrustScore    *big.Int
+		HardwareScore *big.Int
+		SecurityScore *big.Int
+		Weight        *big.Int
+		Authenticated bool
 	}
-	parsed, ok := out[0].(string)
-	if !ok {
-		return "", errors.New("unexpected response type")
+	if err := c.contract.Call(c.callOpts, &out, "getAllDevices"); err != nil {
+		return nil, err
 	}
-	return parsed, nil
+	devices := make([]Device, 0, len(out))
+	for _, item := range out {
+		devices = append(devices, Device{
+			UUID:          item.UUID,
+			TrustScore:    item.TrustScore,
+			HardwareScore: item.HardwareScore,
+			SecurityScore: item.SecurityScore,
+			Weight:        item.Weight,
+			Authenticated: item.Authenticated,
+		})
+	}
+	return devices, nil
 }

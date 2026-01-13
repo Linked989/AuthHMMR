@@ -15,3 +15,6 @@ auth:
 
 detail:
 	$(GO) run ./cmd/detail-dev
+
+query:
+	$(GO) run ./cmd/query-devices

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/big"
 	mr "math/rand"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"auth/hmmr"
+	"auth/internal/besu"
 	"auth/internal/blockchain"
 
 	"github.com/joho/godotenv"
@@ -109,13 +111,18 @@ func main() {
 	}
 	log.Printf("Registered devices available: %d", len(scDevices))
 
-	besu, err := newBesuClientFromEnv()
+	besuClient, err := besu.NewClientFromEnv()
 	if err != nil {
 		log.Fatalf("init besu client: %v", err)
 	}
-	if besu != nil {
-		if err := besu.syncRegisteredDevices(context.Background(), scDevices); err != nil {
-			log.Fatalf("sync registered devices: %v", err)
+	if besuClient != nil {
+		for _, dev := range scDevices {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			_, err := besuClient.AddDevice(ctx, dev.UUID, scoreToUint(dev.TrustScore), scoreToUint(dev.HardwareScore), scoreToUint(dev.SecurityScore))
+			cancel()
+			if err != nil {
+				log.Fatalf("register device %s on besu: %v", dev.UUID, err)
+			}
 		}
 	}
 
@@ -178,9 +185,9 @@ func main() {
 		commCostBytes = append(commCostBytes, len(payload))
 		transactions = append(transactions, blockchain.NewTransaction("auth_result", payload, time.Now()))
 
-		if besu != nil {
+		if besuClient != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err := besu.authenticateDevice(ctx, dev.UUID, authenticate)
+			err := besuClient.AuthenticateDevice(ctx, dev.UUID, authenticate)
 			cancel()
 			if err != nil {
 				log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
@@ -314,6 +321,14 @@ func loadRegisteredDevices(filename string) ([]SCDevice, error) {
 		return nil, err
 	}
 	return devices, nil
+}
+
+func scoreToUint(score float64) *big.Int {
+	rounded := int64(math.Round(score))
+	if rounded < 0 {
+		rounded = 0
+	}
+	return big.NewInt(rounded)
 }
 
 func saveRegisteredDevices(filename string, devices []SCDevice) error {
