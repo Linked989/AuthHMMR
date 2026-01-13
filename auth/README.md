@@ -26,7 +26,7 @@ Quickstart
 6) Clear all devices from the smart contract.
    go run ./cmd/clear-devices
    go run ./cmd/clear-devices -force
-   go run ./cmd/clear-devices -uuid QCJY6LRK
+   go run ./cmd/clear-devices -uuid PJLIZV5O
 
 Alternative runner
 - python3 scripts/run_all.py
