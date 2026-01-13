@@ -23,7 +23,8 @@ const deviceRegistryABI = `[
   {"inputs":[{"internalType":"string","name":"_uuid","type":"string"},{"internalType":"uint256","name":"_trustScore","type":"uint256"},{"internalType":"uint256","name":"_hardwareScore","type":"uint256"},{"internalType":"uint256","name":"_securityScore","type":"uint256"}],"name":"addDevice","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"string","name":"_uuid","type":"string"},{"internalType":"bool","name":"_status","type":"bool"}],"name":"authenticateDevice","outputs":[],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"internalType":"string","name":"_uuid","type":"string"}],"name":"getDeviceDetails","outputs":[{"internalType":"string","name":"","type":"string"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"uint256","name":"","type":"uint256"},{"internalType":"bool","name":"","type":"bool"}],"stateMutability":"view","type":"function"},
-  {"inputs":[],"name":"getAllDevices","outputs":[{"components":[{"internalType":"string","name":"uuid","type":"string"},{"internalType":"uint256","name":"trustScore","type":"uint256"},{"internalType":"uint256","name":"hardwareScore","type":"uint256"},{"internalType":"uint256","name":"securityScore","type":"uint256"},{"internalType":"uint256","name":"weight","type":"uint256"},{"internalType":"bool","name":"authenticated","type":"bool"}],"internalType":"struct DeviceRegistry.Device[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"}
+  {"inputs":[],"name":"getAllDevices","outputs":[{"components":[{"internalType":"string","name":"uuid","type":"string"},{"internalType":"uint256","name":"trustScore","type":"uint256"},{"internalType":"uint256","name":"hardwareScore","type":"uint256"},{"internalType":"uint256","name":"securityScore","type":"uint256"},{"internalType":"uint256","name":"weight","type":"uint256"},{"internalType":"bool","name":"authenticated","type":"bool"}],"internalType":"struct DeviceRegistry.Device[]","name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"internalType":"string","name":"_uuid","type":"string"}],"name":"removeDevice","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ]`
 
 type Client struct {
@@ -195,4 +196,14 @@ func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 	default:
 		return nil, fmt.Errorf("unexpected getAllDevices type %T", out[0])
 	}
+}
+
+func (c *Client) RemoveDevice(ctx context.Context, uuid string) error {
+	c.txOpts.Context = ctx
+	tx, err := c.contract.Transact(c.txOpts, "removeDevice", uuid)
+	if err != nil {
+		return err
+	}
+	_, err = bind.WaitMined(ctx, c.client, tx)
+	return err
 }

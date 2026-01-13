@@ -18,3 +18,6 @@ detail:
 
 query:
 	$(GO) run ./cmd/query-devices
+
+clear:
+	$(GO) run ./cmd/clear-devices

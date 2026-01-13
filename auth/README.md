@@ -20,6 +20,9 @@ Quickstart
 5) Query devices from the smart contract.
    go run ./cmd/query-devices
    go run ./cmd/query-devices -authenticated
+6) Clear all devices from the smart contract.
+   go run ./cmd/clear-devices
+   go run ./cmd/clear-devices -force
 
 Alternative runner
 - python3 scripts/run_all.py
@@ -56,4 +59,3 @@ Makefile
 - make register: generate registered devices (sc_devices.json)
 - make auth: run authentication and block build
 - make detail: show registered device summary
-
