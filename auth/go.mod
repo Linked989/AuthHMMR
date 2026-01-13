@@ -12,6 +12,7 @@ require (
 	github.com/ethereum/c-kzg-4844 v0.4.0 // indirect
 	github.com/ethereum/go-ethereum v1.13.12 // indirect
 	github.com/holiman/uint256 v1.2.4 // indirect
+	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
 	golang.org/x/crypto v0.17.0 // indirect

@@ -18,6 +18,8 @@ import (
 
 	"auth/hmmr"
 	"auth/internal/blockchain"
+
+	"github.com/joho/godotenv"
 )
 
 const (
@@ -74,6 +76,7 @@ type DeviceHistory struct {
 var deviceHistories = make(map[string]*DeviceHistory)
 
 func main() {
+	_ = godotenv.Load()
 	hmmrMetricsEnabled := flag.Bool("hmmr-metrics", false, "collect HMMR metrics while building blocks")
 	hmmrHashAlgorithm := flag.String("hmmr-hash", "sha256", "hash algorithm for HMMR leaves (sha256)")
 	devicesPath := flag.String("devices", RegisteredDevicesJSON, "path to registered devices JSON")
