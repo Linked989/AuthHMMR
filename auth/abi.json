@@ -1,288 +1,373 @@
 [
-	{
-		"inputs": [
-			{
-				"internalType": "string",
-				"name": "_uuid",
-				"type": "string"
-			},
-			{
-				"internalType": "bool",
-				"name": "_status",
-				"type": "bool"
-			}
-		],
-		"name": "authenticateDevice",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_alpha",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_beta",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_gamma",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "nonpayable",
-		"type": "constructor"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "string",
-				"name": "uuid",
-				"type": "string"
-			},
-			{
-				"indexed": false,
-				"internalType": "bool",
-				"name": "status",
-				"type": "bool"
-			}
-		],
-		"name": "DeviceAuthenticated",
-		"type": "event"
-	},
-	{
-		"anonymous": false,
-		"inputs": [
-			{
-				"indexed": false,
-				"internalType": "string",
-				"name": "uuid",
-				"type": "string"
-			},
-			{
-				"indexed": false,
-				"internalType": "uint256",
-				"name": "weight",
-				"type": "uint256"
-			}
-		],
-		"name": "DeviceRegistered",
-		"type": "event"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string",
-				"name": "_uuid",
-				"type": "string"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_trustScore",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_hardwareScore",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_securityScore",
-				"type": "uint256"
-			}
-		],
-		"name": "registerDevice",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "_alpha",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_beta",
-				"type": "uint256"
-			},
-			{
-				"internalType": "uint256",
-				"name": "_gamma",
-				"type": "uint256"
-			}
-		],
-		"name": "updateCoefficients",
-		"outputs": [],
-		"stateMutability": "nonpayable",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "alpha",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "beta",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "deviceCount",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"name": "deviceUUIDs",
-		"outputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "gamma",
-		"outputs": [
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "getAllDevices",
-		"outputs": [
-			{
-				"components": [
-					{
-						"internalType": "string",
-						"name": "uuid",
-						"type": "string"
-					},
-					{
-						"internalType": "uint256",
-						"name": "trustScore",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "hardwareScore",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "securityScore",
-						"type": "uint256"
-					},
-					{
-						"internalType": "uint256",
-						"name": "weight",
-						"type": "uint256"
-					},
-					{
-						"internalType": "bool",
-						"name": "authenticated",
-						"type": "bool"
-					}
-				],
-				"internalType": "struct DeviceRegistry.Device[]",
-				"name": "",
-				"type": "tuple[]"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [
-			{
-				"internalType": "string",
-				"name": "_uuid",
-				"type": "string"
-			}
-		],
-		"name": "getDevice",
-		"outputs": [
-			{
-				"internalType": "string",
-				"name": "",
-				"type": "string"
-			},
-			{
-				"internalType": "uint256",
-				"name": "",
-				"type": "uint256"
-			},
-			{
-				"internalType": "bool",
-				"name": "",
-				"type": "bool"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	},
-	{
-		"inputs": [],
-		"name": "owner",
-		"outputs": [
-			{
-				"internalType": "address",
-				"name": "",
-				"type": "address"
-			}
-		],
-		"stateMutability": "view",
-		"type": "function"
-	}
-]
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_alpha",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_beta",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_gamma",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "uuid",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "bool",
+          "name": "status",
+          "type": "bool"
+        }
+      ],
+      "name": "DeviceAuthenticated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "uuid",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "weight",
+          "type": "uint256"
+        }
+      ],
+      "name": "DeviceRegistered",
+      "type": "event"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_trustScore",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_hardwareScore",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_securityScore",
+          "type": "uint256"
+        }
+      ],
+      "name": "addDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "alpha",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        },
+        {
+          "internalType": "bool",
+          "name": "_status",
+          "type": "bool"
+        }
+      ],
+      "name": "authenticateDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "beta",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "deviceCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "deviceUUIDs",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "gamma",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllDevices",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "string",
+              "name": "uuid",
+              "type": "string"
+            },
+            {
+              "internalType": "uint256",
+              "name": "trustScore",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "hardwareScore",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "securityScore",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "weight",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bool",
+              "name": "authenticated",
+              "type": "bool"
+            }
+          ],
+          "internalType": "struct DeviceRegistry.Device[]",
+          "name": "",
+          "type": "tuple[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        }
+      ],
+      "name": "getDevice",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        }
+      ],
+      "name": "getDeviceDetails",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_trustScore",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_hardwareScore",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_securityScore",
+          "type": "uint256"
+        }
+      ],
+      "name": "registerDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "_uuid",
+          "type": "string"
+        }
+      ],
+      "name": "removeDevice",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_alpha",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_beta",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_gamma",
+          "type": "uint256"
+        }
+      ],
+      "name": "updateCoefficients",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    }
+  ]
