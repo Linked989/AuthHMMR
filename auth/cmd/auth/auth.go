@@ -21,6 +21,7 @@ import (
 	"auth/internal/besu"
 	"auth/internal/blockchain"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
 )
 
@@ -88,6 +89,7 @@ func main() {
 	sensorEnabled := flag.Bool("sensor-enabled", true, "include synthetic sensor payloads as additional leaves")
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	authAsync := flag.Bool("auth-async", false, "submit auth txs without waiting for mining")
+	authWait := flag.Bool("auth-wait", false, "wait for auth txs after submitting (requires -auth-async)")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -145,6 +147,7 @@ func main() {
 		log.Fatalf("LoadLatest block: %v", err)
 	}
 
+	var authTxs []common.Hash
 	for _, dev := range unauth {
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
@@ -187,6 +190,7 @@ func main() {
 				if err != nil {
 					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
 				}
+				authTxs = append(authTxs, txHash)
 				log.Printf("Submitted auth %s (tx %s)", dev.UUID, txHash.Hex())
 			} else {
 				err := besuClient.AuthenticateDevice(ctx, dev.UUID, authenticate)
@@ -194,6 +198,18 @@ func main() {
 				if err != nil {
 					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
 				}
+			}
+		}
+	}
+
+	if besuClient != nil && *authAsync && *authWait && len(authTxs) > 0 {
+		log.Printf("Waiting for %d auth transaction(s)...", len(authTxs))
+		for _, hash := range authTxs {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			err := besuClient.WaitForReceipt(ctx, hash)
+			cancel()
+			if err != nil {
+				log.Fatalf("wait for auth tx %s: %v", hash.Hex(), err)
 			}
 		}
 	}

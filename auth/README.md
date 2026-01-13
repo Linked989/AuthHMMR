@@ -17,6 +17,7 @@ Quickstart
 3) Run authentication and build a block.
    go run ./cmd/auth
    go run ./cmd/auth -auth-async
+   go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.
    go run ./cmd/detail-dev
 5) Query devices from the smart contract.

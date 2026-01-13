@@ -160,6 +160,20 @@ func (c *Client) AuthenticateDeviceAsync(ctx context.Context, uuid string, statu
 	return tx.Hash(), nil
 }
 
+func (c *Client) WaitForReceipt(ctx context.Context, hash common.Hash) error {
+	for {
+		receipt, err := c.client.TransactionReceipt(ctx, hash)
+		if err == nil && receipt != nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
+}
+
 func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 	c.callOpts.Context = ctx
 	var out []interface{}
