@@ -143,7 +143,15 @@ func (c *Client) AuthenticateDevice(ctx context.Context, uuid string, status boo
 
 func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 	c.callOpts.Context = ctx
-	var out []struct {
+	var out []interface{}
+	if err := c.contract.Call(c.callOpts, &out, "getAllDevices"); err != nil {
+		return nil, err
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+
+	type deviceOutput struct {
 		UUID          string
 		TrustScore    *big.Int
 		HardwareScore *big.Int
@@ -151,11 +159,13 @@ func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 		Weight        *big.Int
 		Authenticated bool
 	}
-	if err := c.contract.Call(c.callOpts, &out, "getAllDevices"); err != nil {
-		return nil, err
+	items, ok := out[0].([]deviceOutput)
+	if !ok {
+		return nil, fmt.Errorf("unexpected getAllDevices type %T", out[0])
 	}
-	devices := make([]Device, 0, len(out))
-	for _, item := range out {
+
+	devices := make([]Device, 0, len(items))
+	for _, item := range items {
 		devices = append(devices, Device{
 			UUID:          item.UUID,
 			TrustScore:    item.TrustScore,
