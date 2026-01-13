@@ -116,14 +116,7 @@ func main() {
 		log.Fatalf("init besu client: %v", err)
 	}
 	if besuClient != nil {
-		for _, dev := range scDevices {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			_, err := besuClient.AddDevice(ctx, dev.UUID, scoreToUint(dev.TrustScore), scoreToUint(dev.HardwareScore), scoreToUint(dev.SecurityScore))
-			cancel()
-			if err != nil {
-				log.Fatalf("register device %s on besu: %v", dev.UUID, err)
-			}
-		}
+		log.Printf("Besu enabled: skipping on-chain registration in auth; use cmd/reg to register devices")
 	}
 
 	indexByUUID := make(map[string]int, len(scDevices))
