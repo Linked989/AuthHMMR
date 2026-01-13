@@ -13,6 +13,7 @@ Quickstart
    go run ./cmd/generate-devices
 2) Generate registered devices.
    go run ./cmd/reg
+   go run ./cmd/reg -async
 3) Run authentication and build a block.
    go run ./cmd/auth
 4) Optional: show device summary.
@@ -23,6 +24,7 @@ Quickstart
 6) Clear all devices from the smart contract.
    go run ./cmd/clear-devices
    go run ./cmd/clear-devices -force
+   go run ./cmd/clear-devices -uuid QCJY6LRK
 
 Alternative runner
 - python3 scripts/run_all.py

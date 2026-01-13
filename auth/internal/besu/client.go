@@ -132,6 +132,15 @@ func (c *Client) AddDevice(ctx context.Context, uuid string, trust, hardware, se
 	return tx.Hash(), nil
 }
 
+func (c *Client) AddDeviceAsync(ctx context.Context, uuid string, trust, hardware, security *big.Int) (common.Hash, error) {
+	c.txOpts.Context = ctx
+	tx, err := c.contract.Transact(c.txOpts, "addDevice", uuid, trust, hardware, security)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return tx.Hash(), nil
+}
+
 func (c *Client) AuthenticateDevice(ctx context.Context, uuid string, status bool) error {
 	c.txOpts.Context = ctx
 	tx, err := c.contract.Transact(c.txOpts, "authenticateDevice", uuid, status)
@@ -198,12 +207,11 @@ func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 	}
 }
 
-func (c *Client) RemoveDevice(ctx context.Context, uuid string) error {
+func (c *Client) RemoveDevice(ctx context.Context, uuid string) (common.Hash, error) {
 	c.txOpts.Context = ctx
 	tx, err := c.contract.Transact(c.txOpts, "removeDevice", uuid)
 	if err != nil {
-		return err
+		return common.Hash{}, err
 	}
-	_, err = bind.WaitMined(ctx, c.client, tx)
-	return err
+	return tx.Hash(), nil
 }

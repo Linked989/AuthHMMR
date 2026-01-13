@@ -14,6 +14,7 @@ import (
 
 	"auth/internal/besu"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
 )
 
@@ -40,6 +41,7 @@ func main() {
 	count := flag.Int("n", defaultDeviceCount, "number of devices to generate")
 	uuidLen := flag.Int("uuid-length", defaultUUIDLength, "length of generated UUIDs")
 	outPath := flag.String("out", registeredDevicesFn, "output JSON for registered devices")
+	async := flag.Bool("async", false, "submit on-chain registrations without waiting for mining")
 	flag.Parse()
 
 	rand.Seed(time.Now().UnixNano())
@@ -84,17 +86,32 @@ func main() {
 
 	for i := range devices {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		_, err := besuClient.AddDevice(
-			ctx,
-			devices[i].UUID,
-			scoreToUint(devices[i].TrustScore),
-			scoreToUint(devices[i].HardwareScore),
-			scoreToUint(devices[i].SecurityScore),
+		var (
+			txHash common.Hash
+			err    error
 		)
+		if *async {
+			txHash, err = besuClient.AddDeviceAsync(
+				ctx,
+				devices[i].UUID,
+				scoreToUint(devices[i].TrustScore),
+				scoreToUint(devices[i].HardwareScore),
+				scoreToUint(devices[i].SecurityScore),
+			)
+		} else {
+			txHash, err = besuClient.AddDevice(
+				ctx,
+				devices[i].UUID,
+				scoreToUint(devices[i].TrustScore),
+				scoreToUint(devices[i].HardwareScore),
+				scoreToUint(devices[i].SecurityScore),
+			)
+		}
 		cancel()
 		if err != nil {
 			log.Fatalf("register device %s on besu: %v", devices[i].UUID, err)
 		}
+		fmt.Printf("Submitted registration %s (tx %s)\n", devices[i].UUID, txHash.Hex())
 	}
 }
 
