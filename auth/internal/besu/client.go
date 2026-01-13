@@ -151,6 +151,15 @@ func (c *Client) AuthenticateDevice(ctx context.Context, uuid string, status boo
 	return err
 }
 
+func (c *Client) AuthenticateDeviceAsync(ctx context.Context, uuid string, status bool) (common.Hash, error) {
+	c.txOpts.Context = ctx
+	tx, err := c.contract.Transact(c.txOpts, "authenticateDevice", uuid, status)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return tx.Hash(), nil
+}
+
 func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 	c.callOpts.Context = ctx
 	var out []interface{}

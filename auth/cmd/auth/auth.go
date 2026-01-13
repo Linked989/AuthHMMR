@@ -87,6 +87,7 @@ func main() {
 	leafMode := flag.String("leaf-mode", "block", "leaf accumulation mode: 'block' (per block) or 'accumulate'")
 	sensorEnabled := flag.Bool("sensor-enabled", true, "include synthetic sensor payloads as additional leaves")
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
+	authAsync := flag.Bool("auth-async", false, "submit auth txs without waiting for mining")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -180,10 +181,19 @@ func main() {
 
 		if besuClient != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			err := besuClient.AuthenticateDevice(ctx, dev.UUID, authenticate)
-			cancel()
-			if err != nil {
-				log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+			if *authAsync {
+				txHash, err := besuClient.AuthenticateDeviceAsync(ctx, dev.UUID, authenticate)
+				cancel()
+				if err != nil {
+					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+				}
+				log.Printf("Submitted auth %s (tx %s)", dev.UUID, txHash.Hex())
+			} else {
+				err := besuClient.AuthenticateDevice(ctx, dev.UUID, authenticate)
+				cancel()
+				if err != nil {
+					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+				}
 			}
 		}
 	}
