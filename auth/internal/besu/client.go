@@ -151,29 +151,48 @@ func (c *Client) GetAllDevices(ctx context.Context) ([]Device, error) {
 		return nil, nil
 	}
 
-	type deviceOutput struct {
+	switch items := out[0].(type) {
+	case []struct {
+		Uuid          string   `json:"uuid"`
+		TrustScore    *big.Int `json:"trustScore"`
+		HardwareScore *big.Int `json:"hardwareScore"`
+		SecurityScore *big.Int `json:"securityScore"`
+		Weight        *big.Int `json:"weight"`
+		Authenticated bool     `json:"authenticated"`
+	}:
+		devices := make([]Device, 0, len(items))
+		for _, item := range items {
+			devices = append(devices, Device{
+				UUID:          item.Uuid,
+				TrustScore:    item.TrustScore,
+				HardwareScore: item.HardwareScore,
+				SecurityScore: item.SecurityScore,
+				Weight:        item.Weight,
+				Authenticated: item.Authenticated,
+			})
+		}
+		return devices, nil
+	case []struct {
 		UUID          string
 		TrustScore    *big.Int
 		HardwareScore *big.Int
 		SecurityScore *big.Int
 		Weight        *big.Int
 		Authenticated bool
-	}
-	items, ok := out[0].([]deviceOutput)
-	if !ok {
+	}:
+		devices := make([]Device, 0, len(items))
+		for _, item := range items {
+			devices = append(devices, Device{
+				UUID:          item.UUID,
+				TrustScore:    item.TrustScore,
+				HardwareScore: item.HardwareScore,
+				SecurityScore: item.SecurityScore,
+				Weight:        item.Weight,
+				Authenticated: item.Authenticated,
+			})
+		}
+		return devices, nil
+	default:
 		return nil, fmt.Errorf("unexpected getAllDevices type %T", out[0])
 	}
-
-	devices := make([]Device, 0, len(items))
-	for _, item := range items {
-		devices = append(devices, Device{
-			UUID:          item.UUID,
-			TrustScore:    item.TrustScore,
-			HardwareScore: item.HardwareScore,
-			SecurityScore: item.SecurityScore,
-			Weight:        item.Weight,
-			Authenticated: item.Authenticated,
-		})
-	}
-	return devices, nil
 }
