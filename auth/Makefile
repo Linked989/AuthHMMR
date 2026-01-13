@@ -5,13 +5,13 @@ GO ?= go
 run: generate register auth
 
 generate:
-	$(GO) run generate_devices.go
+	$(GO) run ./cmd/generate-devices
 
 register:
-	$(GO) run reg.go
+	$(GO) run ./cmd/reg
 
 auth:
-	$(GO) run auth.go
+	$(GO) run ./cmd/auth
 
 detail:
-	$(GO) run detail_dev.go
+	$(GO) run ./cmd/detail-dev

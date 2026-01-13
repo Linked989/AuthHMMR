@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"auth/blockchain"
 	"auth/hmmr"
+	"auth/internal/blockchain"
 )
 
 const (

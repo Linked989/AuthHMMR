@@ -10,13 +10,16 @@ Prereqs
 
 Quickstart
 1) Generate off-chain voter devices.
-   go run generate_devices.go
+   go run ./cmd/generate-devices
 2) Generate registered devices.
-   go run reg.go
+   go run ./cmd/reg
 3) Run authentication and build a block.
-   go run auth.go
+   go run ./cmd/auth
 4) Optional: show device summary.
-   go run detail_dev.go
+   go run ./cmd/detail-dev
+
+Alternative runner
+- python3 scripts/run_all.py
 
 Outputs
 - iot_devices.json: off-chain voters
