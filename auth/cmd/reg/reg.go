@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"auth/internal/besu"
-	"auth/mmr"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
@@ -43,7 +42,6 @@ func main() {
 	uuidLen := flag.Int("uuid-length", defaultUUIDLength, "length of generated UUIDs")
 	outPath := flag.String("out", registeredDevicesFn, "output JSON for registered devices")
 	async := flag.Bool("async", false, "submit on-chain registrations without waiting for mining")
-	mmrStorePath := flag.String("mmr-store", mmr.DefaultStorePath, "path to the persisted MMR event log")
 	flag.Parse()
 
 	rand.Seed(time.Now().UnixNano())
@@ -77,24 +75,6 @@ func main() {
 	}
 
 	fmt.Printf("Generated %d registered devices into %s\n", len(devices), *outPath)
-
-	eventStore, err := mmr.LoadEventStore(*mmrStorePath)
-	if err != nil {
-		log.Fatalf("load mmr store: %v", err)
-	}
-	for _, dev := range devices {
-		if _, _, err := eventStore.AddEvent(mmr.Event{
-			DeviceID:  dev.UUID,
-			Decision:  "registered",
-			Weight:    dev.Weight,
-			Timestamp: time.Now().UTC(),
-		}); err != nil {
-			log.Fatalf("append registration event to mmr: %v", err)
-		}
-	}
-	if err := eventStore.Save(*mmrStorePath); err != nil {
-		log.Fatalf("save mmr store: %v", err)
-	}
 
 	besuClient, err := besu.NewClientFromEnv()
 	if err != nil {

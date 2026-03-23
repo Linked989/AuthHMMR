@@ -29,19 +29,17 @@ Quickstart
    go run ./cmd/clear-devices -uuid PJLIZV5O
 
 MMR event log
-- Registration and authentication decisions are now appended to a local Merkle Mountain Range event store.
+- Authentication decisions are appended to a local Merkle Mountain Range event store.
 - Default file: `mmr_events.json`
-- Registration writes `registered` events.
 - Authentication writes `authenticated` or `rejected` events.
-- Both commands support `-mmr-store` to override the file path.
+- `cmd/auth` supports `-mmr-store` to override the file path.
 
 Run with MMR
-1) Generate registrations and write registration events into the default MMR store.
+1) Generate registrations normally.
    go run ./cmd/reg
-2) Run authentication and append auth decision events into the same MMR store.
+2) Run authentication and append auth decision events into the MMR store.
    go run ./cmd/auth
 3) Use a custom MMR store path if needed.
-   go run ./cmd/reg -mmr-store custom_mmr_events.json
    go run ./cmd/auth -mmr-store custom_mmr_events.json
 
 MMR website viewer
@@ -58,7 +56,7 @@ Alternative runner
 Outputs
 - iot_devices.json: off-chain voters
 - sc_devices.json: registered devices (updated after auth)
-- mmr_events.json: persisted MMR registration/auth event log
+- mmr_events.json: persisted MMR authentication event log
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 

@@ -1,0 +1,124 @@
+{
+  "events": [
+    {
+      "device_id": "V8Y2EKWF",
+      "decision": "registered",
+      "weight": 248,
+      "timestamp": "2026-03-23T22:41:51.256733347Z"
+    },
+    {
+      "device_id": "7JJETOJJ",
+      "decision": "registered",
+      "weight": 252,
+      "timestamp": "2026-03-23T22:41:51.256762043Z"
+    },
+    {
+      "device_id": "LS5UPX9J",
+      "decision": "registered",
+      "weight": 247,
+      "timestamp": "2026-03-23T22:41:51.256766176Z"
+    },
+    {
+      "device_id": "K2OSSKTU",
+      "decision": "registered",
+      "weight": 241,
+      "timestamp": "2026-03-23T22:41:51.25676977Z"
+    },
+    {
+      "device_id": "6WDVLA8B",
+      "decision": "registered",
+      "weight": 240,
+      "timestamp": "2026-03-23T22:41:51.256773689Z"
+    },
+    {
+      "device_id": "SIKECLHY",
+      "decision": "registered",
+      "weight": 231,
+      "timestamp": "2026-03-23T22:41:51.25677929Z"
+    },
+    {
+      "device_id": "45L271G1",
+      "decision": "registered",
+      "weight": 238,
+      "timestamp": "2026-03-23T22:41:51.256784352Z"
+    },
+    {
+      "device_id": "IXPWJSYM",
+      "decision": "registered",
+      "weight": 251,
+      "timestamp": "2026-03-23T22:41:51.256790419Z"
+    },
+    {
+      "device_id": "Q50QQGNU",
+      "decision": "registered",
+      "weight": 257,
+      "timestamp": "2026-03-23T22:41:51.256796313Z"
+    },
+    {
+      "device_id": "7MBONQDA",
+      "decision": "registered",
+      "weight": 232,
+      "timestamp": "2026-03-23T22:41:51.256811144Z"
+    },
+    {
+      "device_id": "V8Y2EKWF",
+      "decision": "authenticated",
+      "weight": 248,
+      "timestamp": "2026-03-23T22:42:01.209474807Z"
+    },
+    {
+      "device_id": "7JJETOJJ",
+      "decision": "authenticated",
+      "weight": 252,
+      "timestamp": "2026-03-23T22:42:01.220672199Z"
+    },
+    {
+      "device_id": "LS5UPX9J",
+      "decision": "authenticated",
+      "weight": 247,
+      "timestamp": "2026-03-23T22:42:01.228586069Z"
+    },
+    {
+      "device_id": "K2OSSKTU",
+      "decision": "authenticated",
+      "weight": 241,
+      "timestamp": "2026-03-23T22:42:01.236676343Z"
+    },
+    {
+      "device_id": "6WDVLA8B",
+      "decision": "authenticated",
+      "weight": 240,
+      "timestamp": "2026-03-23T22:42:01.246114633Z"
+    },
+    {
+      "device_id": "SIKECLHY",
+      "decision": "authenticated",
+      "weight": 231,
+      "timestamp": "2026-03-23T22:42:01.258126252Z"
+    },
+    {
+      "device_id": "45L271G1",
+      "decision": "authenticated",
+      "weight": 238,
+      "timestamp": "2026-03-23T22:42:01.266149835Z"
+    },
+    {
+      "device_id": "IXPWJSYM",
+      "decision": "authenticated",
+      "weight": 251,
+      "timestamp": "2026-03-23T22:42:01.273908382Z"
+    },
+    {
+      "device_id": "Q50QQGNU",
+      "decision": "authenticated",
+      "weight": 257,
+      "timestamp": "2026-03-23T22:42:01.282230849Z"
+    },
+    {
+      "device_id": "7MBONQDA",
+      "decision": "authenticated",
+      "weight": 232,
+      "timestamp": "2026-03-23T22:42:01.29029902Z"
+    }
+  ]
+}
