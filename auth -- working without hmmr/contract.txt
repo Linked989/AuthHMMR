@@ -1,0 +1,141 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract DeviceRegistry {
+    struct Device {
+        string  uuid;
+        uint256 trustScore;
+        uint256 hardwareScore;
+        uint256 securityScore;
+        uint256 weight;
+        bool    authenticated;
+    }
+
+
+    address public owner;
+    uint256 public alpha;
+    uint256 public beta;
+    uint256 public gamma;
+    uint256 public deviceCount;
+
+    mapping(string => Device) private devices;
+    mapping(string => uint256) private deviceIndex;
+    string[] public deviceUUIDs;
+
+    event DeviceRegistered(string uuid, uint256 weight);
+    event DeviceAuthenticated(string uuid, bool status);
+
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not contract owner");
+        _;
+    }
+
+    constructor(uint256 _alpha, uint256 _beta, uint256 _gamma) {
+        owner = msg.sender;
+        alpha = _alpha;
+        beta = _beta;
+        gamma = _gamma;
+    }
+
+    function registerDevice(
+        string memory _uuid,
+        uint256 _trustScore,
+        uint256 _hardwareScore,
+        uint256 _securityScore
+    ) public onlyOwner {
+        require(bytes(_uuid).length == 8, "UUID must be 8 characters");
+        require(deviceIndex[_uuid] == 0, "Device already registered");
+
+        uint256 weight = (alpha * _trustScore) + (beta * _hardwareScore) + (gamma * _securityScore);
+
+        devices[_uuid] = Device({
+            uuid:           _uuid,
+            trustScore:     _trustScore,
+            hardwareScore:  _hardwareScore,
+            securityScore:  _securityScore,
+            weight:         weight,
+            authenticated:  false
+        });
+
+        deviceUUIDs.push(_uuid);
+        deviceIndex[_uuid] = deviceUUIDs.length;
+        deviceCount += 1;
+
+        emit DeviceRegistered(_uuid, weight);
+    }
+
+    function addDevice(
+        string memory _uuid,
+        uint256 _trustScore,
+        uint256 _hardwareScore,
+        uint256 _securityScore
+    ) public onlyOwner {
+        registerDevice(_uuid, _trustScore, _hardwareScore, _securityScore);
+    }
+
+    function authenticateDevice(string memory _uuid, bool _status) public onlyOwner {
+        require(deviceIndex[_uuid] != 0, "Device not registered");
+
+        devices[_uuid].authenticated = _status;
+
+        emit DeviceAuthenticated(_uuid, _status);
+    }
+
+    function getDevice(string memory _uuid) public view returns (string memory, uint256, bool) {
+        require(deviceIndex[_uuid] != 0, "Device not registered");
+        Device memory device = devices[_uuid];
+        return (device.uuid, device.weight, device.authenticated);
+    }
+
+    function getDeviceDetails(string memory _uuid) public view returns (
+        string memory,
+        uint256,
+        uint256,
+        uint256,
+        uint256,
+        bool
+    ) {
+        require(deviceIndex[_uuid] != 0, "Device not registered");
+        Device memory device = devices[_uuid];
+        return (
+            device.uuid,
+            device.trustScore,
+            device.hardwareScore,
+            device.securityScore,
+            device.weight,
+            device.authenticated
+        );
+    }
+
+    function getAllDevices() public view returns (Device[] memory) {
+        Device[] memory allDevices = new Device[](deviceCount);
+        for (uint256 i = 0; i < deviceCount; i++) {
+            allDevices[i] = devices[deviceUUIDs[i]];
+        }
+        return allDevices;
+    }
+
+    function removeDevice(string memory _uuid) public onlyOwner {
+        uint256 idxPlusOne = deviceIndex[_uuid];
+        require(idxPlusOne != 0, "Device not registered");
+
+        uint256 idx = idxPlusOne - 1;
+        uint256 lastIdx = deviceUUIDs.length - 1;
+        if (idx != lastIdx) {
+            string memory lastUUID = deviceUUIDs[lastIdx];
+            deviceUUIDs[idx] = lastUUID;
+            deviceIndex[lastUUID] = idx + 1;
+        }
+        deviceUUIDs.pop();
+        delete deviceIndex[_uuid];
+        delete devices[_uuid];
+        deviceCount -= 1;
+    }
+
+    // Functions to update coefficients if needed
+    function updateCoefficients(uint256 _alpha, uint256 _beta, uint256 _gamma) public onlyOwner {
+        alpha = _alpha;
+        beta = _beta;
+        gamma = _gamma;
+    }
+}
