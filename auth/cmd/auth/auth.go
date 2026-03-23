@@ -20,6 +20,7 @@ import (
 	"auth/hmmr"
 	"auth/internal/besu"
 	"auth/internal/blockchain"
+	"auth/mmr"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
@@ -82,7 +83,7 @@ func main() {
 	_ = godotenv.Load()
 	hmmrMetricsEnabled := flag.Bool("hmmr-metrics", false, "collect HMMR metrics while building blocks")
 	hmmrHashAlgorithm := flag.String("hmmr-hash", "sha256", "hash algorithm for HMMR leaves (sha256)")
-	hmmrStorePath := flag.String("hmmr-store", hmmr.DefaultStorePath, "path to the persisted HMMR event log")
+	mmrStorePath := flag.String("mmr-store", mmr.DefaultStorePath, "path to the persisted MMR event log")
 	devicesPath := flag.String("devices", RegisteredDevicesJSON, "path to registered devices JSON")
 	blocksDir := flag.String("blocks-dir", BlocksDirectory, "directory where blocks are stored")
 	sensorLeavesTarget := flag.Int("sensor-leaves", 0, "desired number of sensor-data leaves per block (0 = auto)")
@@ -115,9 +116,9 @@ func main() {
 	}
 	log.Printf("Registered devices available: %d", len(scDevices))
 
-	eventStore, err := hmmr.LoadEventStore(*hmmrStorePath, hmmr.Options{HashAlgorithm: *hmmrHashAlgorithm})
+	eventStore, err := mmr.LoadEventStore(*mmrStorePath)
 	if err != nil {
-		log.Fatalf("load hmmr store: %v", err)
+		log.Fatalf("load mmr store: %v", err)
 	}
 
 	besuClient, err := besu.NewClientFromEnv()
@@ -192,13 +193,13 @@ func main() {
 		if authenticate {
 			decision = "authenticated"
 		}
-		if _, _, err := eventStore.AddEvent(hmmr.Event{
+		if _, _, err := eventStore.AddEvent(mmr.Event{
 			DeviceID:  dev.UUID,
 			Decision:  decision,
 			Weight:    dev.Weight,
 			Timestamp: time.Now().UTC(),
 		}); err != nil {
-			log.Fatalf("append auth event: %v", err)
+			log.Fatalf("append auth event to mmr: %v", err)
 		}
 
 		if besuClient != nil {
@@ -236,8 +237,8 @@ func main() {
 	if err := saveRegisteredDevices(*devicesPath, scDevices); err != nil {
 		log.Fatalf("saveRegisteredDevices: %v", err)
 	}
-	if err := eventStore.Save(*hmmrStorePath); err != nil {
-		log.Fatalf("save hmmr store: %v", err)
+	if err := eventStore.Save(*mmrStorePath); err != nil {
+		log.Fatalf("save mmr store: %v", err)
 	}
 
 	if len(transactions) == 0 {
