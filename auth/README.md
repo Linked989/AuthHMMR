@@ -44,6 +44,14 @@ Run with MMR
    go run ./cmd/reg -mmr-store custom_mmr_events.json
    go run ./cmd/auth -mmr-store custom_mmr_events.json
 
+MMR website viewer
+- Static viewer directory: `mmr-viewer/`
+- Open `mmr-viewer/index.html` in a browser and upload `mmr_events.json`, or paste the JSON directly.
+- For a local server, from the project root run:
+  `python3 -m http.server 8000`
+  then open `http://localhost:8000/mmr-viewer/`
+- The page renders MMR mountains, peaks, leaf ordering, and the bagged root.
+
 Alternative runner
 - python3 scripts/run_all.py
 

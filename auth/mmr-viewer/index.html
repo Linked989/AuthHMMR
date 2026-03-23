@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MMR Viewer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">Merkle Mountain Range</p>
+          <h1>Visualize registration and authentication events as real MMR mountains.</h1>
+          <p class="hero-text">
+            Load <code>mmr_events.json</code>, inspect peaks, and see exactly how each event leaf is folded into the final root.
+          </p>
+        </div>
+        <div class="hero-root" id="rootCard">
+          <span class="root-label">Current Root</span>
+          <code id="rootHash">No data loaded</code>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="panel controls-panel">
+          <div class="panel-head">
+            <h2>Input</h2>
+            <p>Upload the generated event store or paste its JSON directly.</p>
+          </div>
+
+          <div class="controls">
+            <label class="file-drop">
+              <span>Choose `mmr_events.json`</span>
+              <input id="fileInput" type="file" accept=".json,application/json" />
+            </label>
+
+            <div class="button-row">
+              <button id="loadSampleButton" type="button">Load Demo Events</button>
+              <button id="renderJsonButton" type="button" class="ghost">Render JSON</button>
+              <button id="resetButton" type="button" class="ghost">Reset</button>
+            </div>
+
+            <label class="textarea-label" for="jsonInput">JSON input</label>
+            <textarea
+              id="jsonInput"
+              spellcheck="false"
+              placeholder='{"events":[{"device_id":"DEV-001","decision":"registered","weight":248,"timestamp":"2026-03-24T10:00:00Z"}]}'
+            ></textarea>
+
+            <p class="hint">
+              Supported formats: <code>{"events":[...]}</code> or a raw event array.
+            </p>
+            <p class="status" id="statusText">Waiting for data.</p>
+          </div>
+        </section>
+
+        <section class="panel overview-panel">
+          <div class="panel-head">
+            <h2>Overview</h2>
+            <p>MMR decomposition and bagged peaks.</p>
+          </div>
+
+          <div class="stats-grid" id="statsGrid">
+            <article class="stat-card">
+              <span>Leaves</span>
+              <strong id="leafCount">0</strong>
+            </article>
+            <article class="stat-card">
+              <span>Mountains</span>
+              <strong id="mountainCount">0</strong>
+            </article>
+            <article class="stat-card">
+              <span>Peak Count</span>
+              <strong id="peakCount">0</strong>
+            </article>
+            <article class="stat-card">
+              <span>Bagging Steps</span>
+              <strong id="baggingCount">0</strong>
+            </article>
+          </div>
+
+          <div class="peaks-strip" id="peaksStrip"></div>
+        </section>
+
+        <section class="panel mountains-panel">
+          <div class="panel-head">
+            <h2>Mountains</h2>
+            <p>Each mountain is a power-of-two binary Merkle tree inside the MMR.</p>
+          </div>
+          <div id="mountainsCanvas" class="mountains-canvas empty-state">
+            Load data to render the structure.
+          </div>
+        </section>
+
+        <section class="panel event-panel">
+          <div class="panel-head">
+            <h2>Events</h2>
+            <p>Leaf ordering used by the MMR.</p>
+          </div>
+          <div id="eventList" class="event-list empty-state">No events loaded.</div>
+        </section>
+
+        <section class="panel details-panel">
+          <div class="panel-head">
+            <h2>Node Details</h2>
+            <p>Click any node in the mountains view.</p>
+          </div>
+          <div id="detailsCard" class="details-card empty-state">No node selected.</div>
+        </section>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
