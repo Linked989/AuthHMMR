@@ -119,3 +119,35 @@ func TestVerifyProofFailsForTamperedEvent(t *testing.T) {
 		t.Fatal("VerifyProof returned true for tampered event")
 	}
 }
+
+func TestVerifyDeviceEvents(t *testing.T) {
+	tree := New()
+	ts := time.Unix(1710000000, 0)
+	events := []Event{
+		testEvent("dev-7", "authenticated", 91, ts),
+		testEvent("dev-8", "rejected", 92, ts.Add(time.Second)),
+		testEvent("dev-7", "rejected", 90, ts.Add(2*time.Second)),
+	}
+
+	for _, event := range events {
+		if _, _, err := tree.AddEvent(event); err != nil {
+			t.Fatalf("AddEvent: %v", err)
+		}
+	}
+
+	verified, root, err := tree.VerifyDeviceEvents("dev-7")
+	if err != nil {
+		t.Fatalf("VerifyDeviceEvents: %v", err)
+	}
+	if len(root) != hashSize {
+		t.Fatalf("root len = %d, want %d", len(root), hashSize)
+	}
+	if len(verified) != 2 {
+		t.Fatalf("verified count = %d, want 2", len(verified))
+	}
+	for i, item := range verified {
+		if !item.Verified {
+			t.Fatalf("verified[%d] should be true", i)
+		}
+	}
+}

@@ -20,10 +20,13 @@ Quickstart
    go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.
    go run ./cmd/detail-dev
-5) Query devices from the smart contract.
+5) Verify one device against the authentication MMR.
+   go run ./cmd/verify-device -device D_102
+   go run ./cmd/verify-device -device D_102 -mmr-store custom_mmr_events.json
+6) Query devices from the smart contract.
    go run ./cmd/query-devices
    go run ./cmd/query-devices -authenticated
-6) Clear all devices from the smart contract.
+7) Clear all devices from the smart contract.
    go run ./cmd/clear-devices
    go run ./cmd/clear-devices -force
    go run ./cmd/clear-devices -uuid PJLIZV5O
@@ -49,6 +52,14 @@ MMR website viewer
   `python3 -m http.server 8000`
   then open `http://localhost:8000/mmr-viewer/`
 - The page renders MMR mountains, peaks, leaf ordering, and the bagged root.
+
+MMR verification CLI
+- Command: `go run ./cmd/verify-device -device <DEVICE_ID>`
+- It answers:
+  Was this device admitted legitimately according to the recorded MMR-authenticated history?
+  What is its decision history?
+  Do the stored weight values evolve consistently and match the current device record?
+- It verifies each device event proof against the current MMR root before reporting results.
 
 Alternative runner
 - python3 scripts/run_all.py

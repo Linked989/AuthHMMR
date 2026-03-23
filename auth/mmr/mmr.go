@@ -33,6 +33,13 @@ type IndexedEvent struct {
 	Event     Event `json:"event"`
 }
 
+// VerifiedEvent contains one device event plus its proof-verification result.
+type VerifiedEvent struct {
+	IndexedEvent
+	Proof    Proof `json:"proof"`
+	Verified bool  `json:"verified"`
+}
+
 // ProofStep captures one binary Merkle proof step inside a mountain.
 type ProofStep struct {
 	SiblingHash []byte `json:"sibling_hash"`
@@ -144,6 +151,29 @@ func (t *Tree) EventsByDevice(deviceID string) []IndexedEvent {
 		}
 	}
 	return out
+}
+
+// VerifyDeviceEvents generates and verifies proofs for all events stored for one device.
+func (t *Tree) VerifyDeviceEvents(deviceID string) ([]VerifiedEvent, []byte, error) {
+	events := t.EventsByDevice(deviceID)
+	root := t.GetRoot()
+	if len(events) == 0 {
+		return nil, root, nil
+	}
+
+	verified := make([]VerifiedEvent, 0, len(events))
+	for _, indexed := range events {
+		proof, err := t.GenerateProof(indexed.LeafIndex)
+		if err != nil {
+			return nil, nil, err
+		}
+		verified = append(verified, VerifiedEvent{
+			IndexedEvent: indexed,
+			Proof:        proof,
+			Verified:     VerifyProof(indexed.Event, proof, root),
+		})
+	}
+	return verified, root, nil
 }
 
 // Peaks returns the current MMR mountain roots from left to right.
