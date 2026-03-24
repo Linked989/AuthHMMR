@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"auth/mmr"
+	"auth/hmmr"
 )
 
 const registeredDevicesFn = "sc_devices.json"
@@ -28,8 +28,11 @@ type SCDevice struct {
 }
 
 func main() {
-	deviceID := flag.String("device", "", "device ID to inspect in the authentication MMR")
-	mmrStorePath := flag.String("mmr-store", mmr.DefaultStorePath, "path to the persisted MMR event log")
+	deviceID := flag.String("device", "", "device ID to inspect in the authentication subgroup-HMMR")
+	hmmrStorePath := flag.String("hmmr-store", hmmr.DefaultSubgroupStorePath, "path to the persisted subgroup-HMMR event log")
+	hmmrEventArity := flag.Int("hmmr-event-arity", 16, "subgroup-HMMR event branching factor")
+	hmmrEventSubgroup := flag.Int("hmmr-event-subgroup", 4, "subgroup-HMMR event subgroup size")
+	hmmrEventHash := flag.String("hmmr-event-hash", "sha256", "subgroup-HMMR event hash: sha256 or sha512")
 	devicesPath := flag.String("devices", registeredDevicesFn, "path to registered devices JSON for current device state")
 	flag.Parse()
 
@@ -37,9 +40,9 @@ func main() {
 		log.Fatal("device ID is required; use -device <ID>")
 	}
 
-	tree, err := mmr.LoadEventStore(*mmrStorePath)
+	tree, err := hmmr.LoadSubgroupEventStore(*hmmrStorePath, *hmmrEventArity, *hmmrEventSubgroup, *hmmrEventHash)
 	if err != nil {
-		log.Fatalf("load mmr store: %v", err)
+		log.Fatalf("load subgroup hmmr store: %v", err)
 	}
 
 	verifiedEvents, root, err := tree.VerifyDeviceEvents(*deviceID)
@@ -47,7 +50,7 @@ func main() {
 		log.Fatalf("verify device events: %v", err)
 	}
 	if len(verifiedEvents) == 0 {
-		log.Fatalf("device %s has no authentication events in %s", *deviceID, *mmrStorePath)
+		log.Fatalf("device %s has no authentication events in %s", *deviceID, *hmmrStorePath)
 	}
 
 	currentDevice, err := loadDevice(*devicesPath, *deviceID)
@@ -67,7 +70,7 @@ func main() {
 	evolution := summarizeWeightEvolution(verifiedEvents, currentDevice)
 
 	fmt.Printf("Device: %s\n", *deviceID)
-	fmt.Printf("MMR Root: %s\n", hex.EncodeToString(root))
+	fmt.Printf("HMMR Root: %s\n", hex.EncodeToString(root))
 	fmt.Printf("Authentication Events Found: %d\n", len(verifiedEvents))
 	fmt.Printf("All Event Proofs Verified: %t\n", allVerified)
 	fmt.Printf("Latest Decision: %s\n", latest.Event.Decision)
@@ -93,7 +96,7 @@ func main() {
 	fmt.Printf("- Latest recorded weight: %.2f\n", evolution.LastWeight)
 	if evolution.CurrentDeviceFound {
 		fmt.Printf("- Current device weight in %s: %.2f\n", *devicesPath, evolution.CurrentDeviceWeight)
-		fmt.Printf("- Latest MMR weight matches current device record: %t\n", evolution.MatchesCurrentWeight)
+		fmt.Printf("- Latest HMMR weight matches current device record: %t\n", evolution.MatchesCurrentWeight)
 		fmt.Printf("- Current device authenticated flag: %t\n", evolution.CurrentAuthenticated)
 	} else {
 		fmt.Printf("- Current device state not found in %s\n", *devicesPath)
@@ -112,7 +115,7 @@ type evolutionSummary struct {
 	CurrentAuthenticated bool
 }
 
-func summarizeWeightEvolution(events []mmr.VerifiedEvent, current *SCDevice) evolutionSummary {
+func summarizeWeightEvolution(events []hmmr.VerifiedSubgroupEvent, current *SCDevice) evolutionSummary {
 	summary := evolutionSummary{
 		TimestampsOrdered:  true,
 		NonNegativeWeights: true,

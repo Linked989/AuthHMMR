@@ -20,7 +20,6 @@ import (
 	"auth/hmmr"
 	"auth/internal/besu"
 	"auth/internal/blockchain"
-	"auth/mmr"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
@@ -83,7 +82,10 @@ func main() {
 	_ = godotenv.Load()
 	hmmrMetricsEnabled := flag.Bool("hmmr-metrics", false, "collect HMMR metrics while building blocks")
 	hmmrHashAlgorithm := flag.String("hmmr-hash", "sha256", "hash algorithm for HMMR leaves (sha256)")
-	mmrStorePath := flag.String("mmr-store", mmr.DefaultStorePath, "path to the persisted MMR event log")
+	hmmrStorePath := flag.String("hmmr-store", hmmr.DefaultSubgroupStorePath, "path to the persisted subgroup-HMMR event log")
+	hmmrEventArity := flag.Int("hmmr-event-arity", 16, "subgroup-HMMR event branching factor")
+	hmmrEventSubgroup := flag.Int("hmmr-event-subgroup", 4, "subgroup-HMMR event subgroup size")
+	hmmrEventHash := flag.String("hmmr-event-hash", "sha256", "subgroup-HMMR event hash: sha256 or sha512")
 	devicesPath := flag.String("devices", RegisteredDevicesJSON, "path to registered devices JSON")
 	blocksDir := flag.String("blocks-dir", BlocksDirectory, "directory where blocks are stored")
 	sensorLeavesTarget := flag.Int("sensor-leaves", 0, "desired number of sensor-data leaves per block (0 = auto)")
@@ -116,9 +118,9 @@ func main() {
 	}
 	log.Printf("Registered devices available: %d", len(scDevices))
 
-	eventStore, err := mmr.LoadEventStore(*mmrStorePath)
+	eventStore, err := hmmr.LoadSubgroupEventStore(*hmmrStorePath, *hmmrEventArity, *hmmrEventSubgroup, *hmmrEventHash)
 	if err != nil {
-		log.Fatalf("load mmr store: %v", err)
+		log.Fatalf("load subgroup hmmr store: %v", err)
 	}
 
 	besuClient, err := besu.NewClientFromEnv()
@@ -193,13 +195,13 @@ func main() {
 		if authenticate {
 			decision = "authenticated"
 		}
-		if _, _, err := eventStore.AddEvent(mmr.Event{
+		if _, _, err := eventStore.AddEvent(hmmr.Event{
 			DeviceID:  dev.UUID,
 			Decision:  decision,
 			Weight:    dev.Weight,
 			Timestamp: time.Now().UTC(),
 		}); err != nil {
-			log.Fatalf("append auth event to mmr: %v", err)
+			log.Fatalf("append auth event to subgroup hmmr: %v", err)
 		}
 
 		if besuClient != nil {
@@ -237,8 +239,8 @@ func main() {
 	if err := saveRegisteredDevices(*devicesPath, scDevices); err != nil {
 		log.Fatalf("saveRegisteredDevices: %v", err)
 	}
-	if err := eventStore.Save(*mmrStorePath); err != nil {
-		log.Fatalf("save mmr store: %v", err)
+	if err := eventStore.Save(*hmmrStorePath); err != nil {
+		log.Fatalf("save subgroup hmmr store: %v", err)
 	}
 
 	if len(transactions) == 0 {

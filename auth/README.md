@@ -20,9 +20,9 @@ Quickstart
    go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.
    go run ./cmd/detail-dev
-5) Verify one device against the authentication MMR.
+5) Verify one device against the authentication subgroup-HMMR.
    go run ./cmd/verify-device -device D_102
-   go run ./cmd/verify-device -device D_102 -mmr-store custom_mmr_events.json
+   go run ./cmd/verify-device -device D_102 -hmmr-store custom_hmmr_events.json
 6) Query devices from the smart contract.
    go run ./cmd/query-devices
    go run ./cmd/query-devices -authenticated
@@ -31,35 +31,36 @@ Quickstart
    go run ./cmd/clear-devices -force
    go run ./cmd/clear-devices -uuid PJLIZV5O
 
-MMR event log
-- Authentication decisions are appended to a local Merkle Mountain Range event store.
-- Default file: `mmr_events.json`
+HMMR event log
+- Authentication decisions are appended to the subgroup-compressed HMMR event store from `work/hmmr_v9_subgroup.go`.
+- Default file: `hmmr_events.json`
 - Authentication writes `authenticated` or `rejected` events.
-- `cmd/auth` supports `-mmr-store` to override the file path.
+- `cmd/auth` supports `-hmmr-store` to override the file path.
+- `cmd/auth` also supports `-hmmr-event-arity`, `-hmmr-event-subgroup`, and `-hmmr-event-hash`.
 
-Run with MMR
+Run with HMMR
 1) Generate registrations normally.
    go run ./cmd/reg
-2) Run authentication and append auth decision events into the MMR store.
+2) Run authentication and append auth decision events into the HMMR store.
    go run ./cmd/auth
-3) Use a custom MMR store path if needed.
-   go run ./cmd/auth -mmr-store custom_mmr_events.json
+3) Use a custom HMMR store path if needed.
+   go run ./cmd/auth -hmmr-store custom_hmmr_events.json
 
 MMR website viewer
 - Static viewer directory: `mmr-viewer/`
-- Open `mmr-viewer/index.html` in a browser and upload `mmr_events.json`, or paste the JSON directly.
+- Open `mmr-viewer/index.html` in a browser and upload `hmmr_events.json`, or paste the JSON directly.
 - For a local server, from the project root run:
   `python3 -m http.server 8000`
   then open `http://localhost:8000/mmr-viewer/`
 - The page renders MMR mountains, peaks, leaf ordering, and the bagged root.
 
-MMR verification CLI
+HMMR verification CLI
 - Command: `go run ./cmd/verify-device -device <DEVICE_ID>`
 - It answers:
-  Was this device admitted legitimately according to the recorded MMR-authenticated history?
+  Was this device admitted legitimately according to the recorded HMMR-authenticated history?
   What is its decision history?
   Do the stored weight values evolve consistently and match the current device record?
-- It verifies each device event proof against the current MMR root before reporting results.
+- It verifies each device event proof against the current HMMR root before reporting results.
 
 Alternative runner
 - python3 scripts/run_all.py
@@ -67,7 +68,7 @@ Alternative runner
 Outputs
 - iot_devices.json: off-chain voters
 - sc_devices.json: registered devices (updated after auth)
-- mmr_events.json: persisted MMR authentication event log
+- hmmr_events.json: persisted HMMR authentication event log
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
