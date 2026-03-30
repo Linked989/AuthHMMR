@@ -25,15 +25,18 @@ const (
 )
 
 type Device struct {
-	UUID           string  `json:"uuid"`
-	TrustScore     float64 `json:"trustScore"`
-	HardwareScore  float64 `json:"hardwareScore"`
-	SecurityScore  float64 `json:"securityScore"`
-	Weight         float64 `json:"weight"`
-	Authenticated  bool    `json:"authenticated"`
-	LastActive     int64   `json:"lastActive"`
-	CorrectVotes   uint    `json:"correctVotes"`
-	IncorrectVotes uint    `json:"incorrectVotes"`
+	UUID               string  `json:"uuid"`
+	TrustScore         float64 `json:"trustScore"`
+	HardwareScore      float64 `json:"hardwareScore"`
+	SecurityScore      float64 `json:"securityScore"`
+	Weight             float64 `json:"weight"`
+	Authenticated      bool    `json:"authenticated"`
+	LastActive         int64   `json:"lastActive"`
+	CorrectVotes       uint    `json:"correctVotes"`
+	IncorrectVotes     uint    `json:"incorrectVotes"`
+	VotesReceivedYes   uint    `json:"votesReceivedYes"`
+	VotesReceivedNo    uint    `json:"votesReceivedNo"`
+	VotesReceivedTotal uint    `json:"votesReceivedTotal"`
 }
 
 func main() {

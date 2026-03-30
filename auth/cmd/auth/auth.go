@@ -55,16 +55,19 @@ type IoTDevice struct {
 
 // SCDevice holds the device metadata previously fetched from-chain, now local.
 type SCDevice struct {
-	UUID           string  `json:"uuid"`
-	TrustScore     float64 `json:"trustScore"`
-	HardwareScore  float64 `json:"hardwareScore"`
-	SecurityScore  float64 `json:"securityScore"`
-	Weight         float64 `json:"weight"`
-	Authenticated  bool    `json:"authenticated"`
-	LastActive     int64   `json:"lastActive"`
-	CorrectVotes   uint    `json:"correctVotes"`
-	IncorrectVotes uint    `json:"incorrectVotes"`
-	IsMalicious    bool    `json:"isMalicious,omitempty"`
+	UUID               string  `json:"uuid"`
+	TrustScore         float64 `json:"trustScore"`
+	HardwareScore      float64 `json:"hardwareScore"`
+	SecurityScore      float64 `json:"securityScore"`
+	Weight             float64 `json:"weight"`
+	Authenticated      bool    `json:"authenticated"`
+	LastActive         int64   `json:"lastActive"`
+	CorrectVotes       uint    `json:"correctVotes"`
+	IncorrectVotes     uint    `json:"incorrectVotes"`
+	VotesReceivedYes   uint    `json:"votesReceivedYes"`
+	VotesReceivedNo    uint    `json:"votesReceivedNo"`
+	VotesReceivedTotal uint    `json:"votesReceivedTotal"`
+	IsMalicious        bool    `json:"isMalicious,omitempty"`
 }
 
 // DeviceHistory tracks reputational progression for IoT devices.
@@ -211,6 +214,9 @@ func main() {
 		}
 
 		scIdx := indexByUUID[dev.UUID]
+		scDevices[scIdx].VotesReceivedYes += uint(yesCnt)
+		scDevices[scIdx].VotesReceivedNo += uint(tot - yesCnt)
+		scDevices[scIdx].VotesReceivedTotal += uint(tot)
 		scDevices[scIdx].LastActive = time.Now().UnixNano()
 		if authenticate {
 			scDevices[scIdx].Authenticated = true
