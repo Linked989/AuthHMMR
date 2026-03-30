@@ -70,6 +70,7 @@ Outputs
 - sc_devices.json: registered devices (updated after auth)
 - hmmr_events.json: persisted HMMR authentication event log
 - metrics/auth_metrics_*.csv: per-device auth metrics (computational cost, block processing, communication cost)
+- metrics/auth_throughput_*.csv: auth throughput summary (devices/sec over auth window)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 

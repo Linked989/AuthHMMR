@@ -189,6 +189,7 @@ func main() {
 	}
 
 	var authTxs []common.Hash
+	authLoopStart := time.Now()
 	for _, dev := range unauth {
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
@@ -264,6 +265,7 @@ func main() {
 			}
 		}
 	}
+	authLoopDuration := time.Since(authLoopStart)
 
 	if besuClient != nil && *authAsync && *authWait && len(authTxs) > 0 {
 		log.Printf("Waiting for %d auth transaction(s)...", len(authTxs))
@@ -340,6 +342,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("save auth metrics csv: %v", err)
 	}
+	throughputCSVPath, err := saveAuthThroughputCSV(MetricsDirectory, len(unauth), successCount, authLoopDuration)
+	if err != nil {
+		log.Fatalf("save auth throughput csv: %v", err)
+	}
 
 	fmt.Printf("\nBlock %d written to %s (%d tx, build %.2f ms, persist %.2f ms)\n",
 		block.Header.Height,
@@ -372,6 +378,7 @@ func main() {
 		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
 	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
+	fmt.Printf("Throughput CSV written to: %s\n", throughputCSVPath)
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -386,6 +393,16 @@ func main() {
 			onChainTimesMs[i],
 			commCostBytes[i])
 	}
+	totalThroughput := 0.0
+	authenticatedThroughput := 0.0
+	if authLoopDuration > 0 {
+		totalThroughput = float64(len(unauth)) / authLoopDuration.Seconds()
+		authenticatedThroughput = float64(successCount) / authLoopDuration.Seconds()
+	}
+	fmt.Printf("Auth Throughput: %.6f devices/sec (processed=%d, window=%.6f sec)\n",
+		totalThroughput, len(unauth), authLoopDuration.Seconds())
+	fmt.Printf("Authenticated Throughput: %.6f devices/sec (authenticated=%d, window=%.6f sec)\n",
+		authenticatedThroughput, successCount, authLoopDuration.Seconds())
 	fmt.Println("==========================================================\n")
 }
 
@@ -800,5 +817,58 @@ func saveAuthMetricsCSV(
 	if err := writer.Error(); err != nil {
 		return "", err
 	}
+	return path, nil
+}
+
+func saveAuthThroughputCSV(dir string, processedDevices int, authenticatedDevices int, authWindow time.Duration) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	filename := fmt.Sprintf("auth_throughput_%s.csv", time.Now().UTC().Format("20060102_150405"))
+	path := filepath.Join(dir, filename)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	header := []string{
+		"processed_devices",
+		"authenticated_devices",
+		"auth_window_seconds",
+		"throughput_devices_per_sec",
+		"authenticated_throughput_devices_per_sec",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", err
+	}
+
+	windowSeconds := authWindow.Seconds()
+	throughput := 0.0
+	authenticatedThroughput := 0.0
+	if windowSeconds > 0 {
+		throughput = float64(processedDevices) / windowSeconds
+		authenticatedThroughput = float64(authenticatedDevices) / windowSeconds
+	}
+
+	record := []string{
+		fmt.Sprintf("%d", processedDevices),
+		fmt.Sprintf("%d", authenticatedDevices),
+		fmt.Sprintf("%.6f", windowSeconds),
+		fmt.Sprintf("%.6f", throughput),
+		fmt.Sprintf("%.6f", authenticatedThroughput),
+	}
+	if err := writer.Write(record); err != nil {
+		return "", err
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+
 	return path, nil
 }
