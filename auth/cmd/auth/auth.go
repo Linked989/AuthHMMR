@@ -26,7 +26,6 @@ import (
 )
 
 const (
-	NumberOfVoters        = 10
 	MinAcceptableTotal    = 225.0
 	FinalConsensus        = 0.60
 	IoTDevicesJSON        = "iot_devices.json"
@@ -94,6 +93,8 @@ func main() {
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	authAsync := flag.Bool("auth-async", false, "submit auth txs without waiting for mining")
 	authWait := flag.Bool("auth-wait", false, "wait for auth txs after submitting (requires -auth-async)")
+	voterFormulaA := flag.Float64("voter-formula-a", 2.0, "voter selection formula coefficient 'a' in k = a * log_b(N)")
+	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -143,6 +144,31 @@ func main() {
 		log.Println("Nothing to do – all devices are authenticated")
 		return
 	}
+	if *voterFormulaA <= 0 {
+		log.Fatalf("voter-formula-a must be > 0")
+	}
+	if *voterFormulaBase <= 1 {
+		log.Fatalf("voter-formula-b must be > 1")
+	}
+
+	nTargets := len(unauth)
+	rawK := *voterFormulaA * (math.Log(float64(nTargets)) / math.Log(*voterFormulaBase))
+	voterCount := int(math.Ceil(rawK))
+	if voterCount < 1 {
+		voterCount = 1
+	}
+	if voterCount > len(iotDevs) {
+		voterCount = len(iotDevs)
+	}
+	log.Printf(
+		"Voter selection math: k = a * log_b(N), a=%.4f, b=%.4f, N=%d => raw=%.6f, ceil(raw)=%d, capped_to_available=%d",
+		*voterFormulaA,
+		*voterFormulaBase,
+		nTargets,
+		rawK,
+		int(math.Ceil(rawK)),
+		voterCount,
+	)
 
 	offChainTimesMs := make([]float64, 0, len(unauth))
 	offChainTimesNs := make([]int64, 0, len(unauth))
@@ -160,7 +186,12 @@ func main() {
 	for _, dev := range unauth {
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
-		voters := randomSubset(iotDevs, NumberOfVoters)
+		voters := randomSubset(iotDevs, voterCount)
+		voterIDs := make([]string, len(voters))
+		for i := range voters {
+			voterIDs[i] = voters[i].UUID
+		}
+		log.Printf("Selected voters for %s (k=%d): %s", dev.UUID, len(voters), strings.Join(voterIDs, ", "))
 
 		t0 := time.Now()
 		yesCnt, tot, yesMap := doOffChainVoting(voters, dev)

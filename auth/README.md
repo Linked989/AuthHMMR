@@ -91,6 +91,8 @@ auth.go flags
 - -leaf-size: leaf size in bytes (default: 256)
 - -hmmr-metrics: emit HMMR build/proof metrics
 - -hmmr-hash: hash algorithm for leaves (default: sha256)
+- -voter-formula-a: coefficient `a` in `k = a * log_b(N)` for voter count (default: 2.0)
+- -voter-formula-b: base `b` in `k = a * log_b(N)` for voter count (default: 10.0)
 
 Makefile
 - make run: generate devices, register devices, authenticate, build a block
