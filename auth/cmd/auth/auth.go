@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -32,6 +33,7 @@ const (
 	RegisteredDevicesJSON = "sc_devices.json"
 	BlocksDirectory       = "blocks"
 	SensorLeavesFile      = "sensor_leaves.b64"
+	MetricsDirectory      = "metrics"
 )
 
 // IoTDevice represents an off-chain voter.
@@ -173,6 +175,7 @@ func main() {
 	offChainTimesMs := make([]float64, 0, len(unauth))
 	offChainTimesNs := make([]int64, 0, len(unauth))
 	commCostBytes := make([]int, 0, len(unauth))
+	metricDeviceIDs := make([]string, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
 	var newlyAuthenticated []SCDevice
@@ -198,6 +201,7 @@ func main() {
 		offChainDur := time.Since(t0)
 		offChainTimesMs = append(offChainTimesMs, float64(offChainDur.Milliseconds()))
 		offChainTimesNs = append(offChainTimesNs, offChainDur.Nanoseconds())
+		metricDeviceIDs = append(metricDeviceIDs, dev.UUID)
 
 		yesPct := float64(yesCnt) / float64(tot)
 		authenticate := yesPct >= FinalConsensus
@@ -326,6 +330,10 @@ func main() {
 	for i := range onChainTimesMs {
 		onChainTimesMs[i] = perTxBlockTime
 	}
+	metricsPath, err := saveAuthMetricsCSV(MetricsDirectory, metricDeviceIDs, offChainTimesMs, offChainTimesNs, onChainTimesMs, commCostBytes)
+	if err != nil {
+		log.Fatalf("save auth metrics csv: %v", err)
+	}
 
 	fmt.Printf("\nBlock %d written to %s (%d tx, build %.2f ms, persist %.2f ms)\n",
 		block.Header.Height,
@@ -357,6 +365,7 @@ func main() {
 	if *sensorEnabled && mode == "accumulate" {
 		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
+	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -711,4 +720,79 @@ func appendAccumulatedLeaves(path string, leaves [][]byte, leafSize int) error {
 		}
 	}
 	return writer.Flush()
+}
+
+func saveAuthMetricsCSV(
+	dir string,
+	deviceIDs []string,
+	computationalMs []float64,
+	computationalNs []int64,
+	blockProcessingMs []float64,
+	communicationBytes []int,
+) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	filename := fmt.Sprintf("auth_metrics_%s.csv", time.Now().UTC().Format("20060102_150405"))
+	path := filepath.Join(dir, filename)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	header := []string{
+		"device_uuid",
+		"computational_cost_ms",
+		"computational_cost_ns",
+		"block_processing_ms",
+		"block_processing_ns",
+		"communication_cost_bytes",
+		"communication_cost_kb",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", err
+	}
+
+	rows := len(computationalMs)
+	for i := 0; i < rows; i++ {
+		uuid := ""
+		if i < len(deviceIDs) {
+			uuid = deviceIDs[i]
+		}
+
+		blockMs := 0.0
+		if i < len(blockProcessingMs) {
+			blockMs = blockProcessingMs[i]
+		}
+
+		commBytes := 0
+		if i < len(communicationBytes) {
+			commBytes = communicationBytes[i]
+		}
+
+		record := []string{
+			uuid,
+			fmt.Sprintf("%.3f", computationalMs[i]),
+			fmt.Sprintf("%d", computationalNs[i]),
+			fmt.Sprintf("%.3f", blockMs),
+			fmt.Sprintf("%d", int64(math.Round(blockMs*1e6))),
+			fmt.Sprintf("%d", commBytes),
+			fmt.Sprintf("%.6f", float64(commBytes)/1024.0),
+		}
+
+		if err := writer.Write(record); err != nil {
+			return "", err
+		}
+	}
+
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return path, nil
 }
