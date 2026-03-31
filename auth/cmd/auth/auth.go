@@ -174,6 +174,18 @@ func main() {
 		int(math.Ceil(rawK)),
 		voterCount,
 	)
+	evaluatorScalingCSVPath, err := saveEvaluatorCountScalingCSV(
+		MetricsDirectory,
+		len(iotDevs),
+		nTargets,
+		voterCount,
+		*voterFormulaA,
+		*voterFormulaBase,
+		rawK,
+	)
+	if err != nil {
+		log.Fatalf("save evaluator count scaling csv: %v", err)
+	}
 
 	offChainTimesMs := make([]float64, 0, len(unauth))
 	offChainTimesNs := make([]int64, 0, len(unauth))
@@ -389,6 +401,7 @@ func main() {
 	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
 	fmt.Printf("Throughput CSV written to: %s\n", throughputCSVPath)
 	fmt.Printf("Scalability CSV written to: %s\n", scalabilityCSVPath)
+	fmt.Printf("Evaluator scaling CSV written to: %s\n", evaluatorScalingCSVPath)
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -415,6 +428,8 @@ func main() {
 		authenticatedThroughput, successCount, authLoopDuration.Seconds())
 	fmt.Printf("Scalability point: X=%d candidate devices, Y=%.6f ms average admission latency (%.0f ns)\n",
 		len(unauth), avgAdmissionMs, avgAdmissionNs)
+	fmt.Printf("Evaluator Count Scaling: network_size=%d, selected_evaluators=%d, candidates=%d\n",
+		len(iotDevs), voterCount, len(unauth))
 	fmt.Println("==========================================================\n")
 }
 
@@ -936,6 +951,67 @@ func saveScalabilityAdmissionLatencyCSV(dir string, candidateDevices int, avgAdm
 		fmt.Sprintf("%d", candidateDevices),
 		fmt.Sprintf("%.6f", avgAdmissionMs),
 		fmt.Sprintf("%.0f", avgAdmissionNs),
+	}
+	if err := writer.Write(record); err != nil {
+		return "", err
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func saveEvaluatorCountScalingCSV(
+	dir string,
+	totalNetworkSize int,
+	candidateDevices int,
+	selectedEvaluators int,
+	formulaA float64,
+	formulaBase float64,
+	rawK float64,
+) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(dir, "evaluator_count_scaling.csv")
+	newFile := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		newFile = true
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	if newFile {
+		header := []string{
+			"timestamp_utc",
+			"total_network_size",
+			"candidate_devices_n",
+			"selected_evaluators_k",
+			"formula_a",
+			"formula_base_b",
+			"raw_k",
+		}
+		if err := writer.Write(header); err != nil {
+			return "", err
+		}
+	}
+
+	record := []string{
+		time.Now().UTC().Format(time.RFC3339),
+		fmt.Sprintf("%d", totalNetworkSize),
+		fmt.Sprintf("%d", candidateDevices),
+		fmt.Sprintf("%d", selectedEvaluators),
+		fmt.Sprintf("%.6f", formulaA),
+		fmt.Sprintf("%.6f", formulaBase),
+		fmt.Sprintf("%.6f", rawK),
 	}
 	if err := writer.Write(record); err != nil {
 		return "", err

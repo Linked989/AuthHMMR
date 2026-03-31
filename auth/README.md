@@ -72,6 +72,7 @@ Outputs
 - metrics/auth_metrics_*.csv: per-device auth metrics (computational cost, block processing, communication cost)
 - metrics/auth_throughput_*.csv: auth throughput summary (devices/sec over auth window)
 - metrics/scalability_admission_latency.csv: scalability points (average admission latency vs candidate devices X)
+- metrics/evaluator_count_scaling.csv: evaluator-count scaling points (selected evaluators vs network size)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
