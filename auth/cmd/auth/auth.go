@@ -179,6 +179,7 @@ func main() {
 	offChainTimesNs := make([]int64, 0, len(unauth))
 	commCostBytes := make([]int, 0, len(unauth))
 	metricDeviceIDs := make([]string, 0, len(unauth))
+	admissionLatenciesNs := make([]int64, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
 	var newlyAuthenticated []SCDevice
@@ -191,6 +192,7 @@ func main() {
 	var authTxs []common.Hash
 	authLoopStart := time.Now()
 	for _, dev := range unauth {
+		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
 		voters := randomSubset(iotDevs, voterCount)
@@ -264,6 +266,8 @@ func main() {
 				}
 			}
 		}
+
+		admissionLatenciesNs = append(admissionLatenciesNs, time.Since(deviceAdmissionStart).Nanoseconds())
 	}
 	authLoopDuration := time.Since(authLoopStart)
 
@@ -346,6 +350,11 @@ func main() {
 	if err != nil {
 		log.Fatalf("save auth throughput csv: %v", err)
 	}
+	avgAdmissionMs, avgAdmissionNs := averageLatency(admissionLatenciesNs)
+	scalabilityCSVPath, err := saveScalabilityAdmissionLatencyCSV(MetricsDirectory, len(unauth), avgAdmissionMs, avgAdmissionNs)
+	if err != nil {
+		log.Fatalf("save scalability admission latency csv: %v", err)
+	}
 
 	fmt.Printf("\nBlock %d written to %s (%d tx, build %.2f ms, persist %.2f ms)\n",
 		block.Header.Height,
@@ -379,6 +388,7 @@ func main() {
 	}
 	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
 	fmt.Printf("Throughput CSV written to: %s\n", throughputCSVPath)
+	fmt.Printf("Scalability CSV written to: %s\n", scalabilityCSVPath)
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -403,6 +413,8 @@ func main() {
 		totalThroughput, len(unauth), authLoopDuration.Seconds())
 	fmt.Printf("Authenticated Throughput: %.6f devices/sec (authenticated=%d, window=%.6f sec)\n",
 		authenticatedThroughput, successCount, authLoopDuration.Seconds())
+	fmt.Printf("Scalability point: X=%d candidate devices, Y=%.6f ms average admission latency (%.0f ns)\n",
+		len(unauth), avgAdmissionMs, avgAdmissionNs)
 	fmt.Println("==========================================================\n")
 }
 
@@ -870,5 +882,66 @@ func saveAuthThroughputCSV(dir string, processedDevices int, authenticatedDevice
 		return "", err
 	}
 
+	return path, nil
+}
+
+func averageLatency(samplesNs []int64) (float64, float64) {
+	if len(samplesNs) == 0 {
+		return 0, 0
+	}
+
+	var totalNs int64
+	for _, sample := range samplesNs {
+		totalNs += sample
+	}
+	avgNs := float64(totalNs) / float64(len(samplesNs))
+	avgMs := avgNs / 1e6
+	return avgMs, avgNs
+}
+
+func saveScalabilityAdmissionLatencyCSV(dir string, candidateDevices int, avgAdmissionMs float64, avgAdmissionNs float64) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(dir, "scalability_admission_latency.csv")
+	newFile := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		newFile = true
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	if newFile {
+		header := []string{
+			"timestamp_utc",
+			"candidate_devices_x",
+			"average_admission_latency_ms",
+			"average_admission_latency_ns",
+		}
+		if err := writer.Write(header); err != nil {
+			return "", err
+		}
+	}
+
+	record := []string{
+		time.Now().UTC().Format(time.RFC3339),
+		fmt.Sprintf("%d", candidateDevices),
+		fmt.Sprintf("%.6f", avgAdmissionMs),
+		fmt.Sprintf("%.0f", avgAdmissionNs),
+	}
+	if err := writer.Write(record); err != nil {
+		return "", err
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
 	return path, nil
 }

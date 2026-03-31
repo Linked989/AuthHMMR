@@ -71,6 +71,7 @@ Outputs
 - hmmr_events.json: persisted HMMR authentication event log
 - metrics/auth_metrics_*.csv: per-device auth metrics (computational cost, block processing, communication cost)
 - metrics/auth_throughput_*.csv: auth throughput summary (devices/sec over auth window)
+- metrics/scalability_admission_latency.csv: scalability points (average admission latency vs candidate devices X)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
