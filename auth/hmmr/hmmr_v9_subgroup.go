@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // DefaultSubgroupStorePath is the default persisted auth-event store for subgroup HMMR.
@@ -59,6 +60,16 @@ type VerifiedSubgroupEvent struct {
 	IndexedEvent
 	Proof    *SubgroupProof `json:"proof"`
 	Verified bool           `json:"verified"`
+}
+
+// ProofGenerationMetric captures proof generation timing for one recorded event.
+type ProofGenerationMetric struct {
+	EventID               string    `json:"event_id"`
+	LeafIndex             int       `json:"leaf_index"`
+	ProofGenerationTimeMs float64   `json:"proof_generation_time_ms"`
+	TotalRecordedEvents   int       `json:"total_number_of_recorded_events"`
+	ProofSizeBytes        int       `json:"proof_size_bytes"`
+	TimestampUTC          time.Time `json:"timestamp_utc"`
 }
 
 // SubgroupEventStore keeps events and builds proofs from the subgroup HMMR.
@@ -203,6 +214,11 @@ func (s *SubgroupEventStore) RootHex() string {
 	return hex.EncodeToString(s.GetRoot())
 }
 
+// TotalRecordedEvents returns the number of events stored in HMMR.
+func (s *SubgroupEventStore) TotalRecordedEvents() int {
+	return len(s.events)
+}
+
 // EventsByDevice returns stored events for one device.
 func (s *SubgroupEventStore) EventsByDevice(deviceID string) []IndexedEvent {
 	indices := s.deviceIndex[deviceID]
@@ -243,6 +259,36 @@ func (s *SubgroupEventStore) VerifyDeviceEvents(deviceID string) ([]VerifiedSubg
 		})
 	}
 	return out, root, nil
+}
+
+// GenerateProofByLeafIndex returns the proof for a leaf index.
+func (s *SubgroupEventStore) GenerateProofByLeafIndex(leafIdx int) (*SubgroupProof, error) {
+	if leafIdx < 0 || leafIdx >= len(s.leafData) {
+		return nil, fmt.Errorf("invalid leaf index %d", leafIdx)
+	}
+	proof := s.engine.Proof(leafIdx)
+	if proof == nil {
+		return nil, fmt.Errorf("proof generation failed for leaf index %d", leafIdx)
+	}
+	return proof, nil
+}
+
+// MeasureProofGenerationByLeafIndex measures proof generation time for one recorded event.
+func (s *SubgroupEventStore) MeasureProofGenerationByLeafIndex(leafIdx int) (*ProofGenerationMetric, error) {
+	start := time.Now()
+	proof, err := s.GenerateProofByLeafIndex(leafIdx)
+	if err != nil {
+		return nil, err
+	}
+	elapsed := time.Since(start)
+	return &ProofGenerationMetric{
+		EventID:               fmt.Sprintf("leaf:%d", leafIdx),
+		LeafIndex:             leafIdx,
+		ProofGenerationTimeMs: float64(elapsed.Nanoseconds()) / 1e6,
+		TotalRecordedEvents:   len(s.events),
+		ProofSizeBytes:        subgroupProofSizeBytes(proof),
+		TimestampUTC:          time.Now().UTC(),
+	}, nil
 }
 
 func (h *SubgroupHMMR) digest(parts ...[]byte) []byte {
@@ -548,4 +594,21 @@ func (h *SubgroupHMMR) Verify(leafData []byte, p *SubgroupProof) bool {
 	}
 
 	return bytes.Equal(cur.Hash, h.Root.Hash)
+}
+
+func subgroupProofSizeBytes(p *SubgroupProof) int {
+	if p == nil {
+		return 0
+	}
+	size := len(p.LeafHash) + 8
+	for _, s := range p.Steps {
+		size += 8 * 8
+		for _, h := range s.LocalSiblings {
+			size += len(h)
+		}
+		for _, h := range s.SubgroupSiblings {
+			size += len(h)
+		}
+	}
+	return size
 }

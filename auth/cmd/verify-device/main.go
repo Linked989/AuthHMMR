@@ -1,12 +1,15 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -34,15 +37,46 @@ func main() {
 	hmmrEventSubgroup := flag.Int("hmmr-event-subgroup", 4, "subgroup-HMMR event subgroup size")
 	hmmrEventHash := flag.String("hmmr-event-hash", "sha256", "subgroup-HMMR event hash: sha256 or sha512")
 	devicesPath := flag.String("devices", registeredDevicesFn, "path to registered devices JSON for current device state")
+	leafIndex := flag.Int("leaf-index", -1, "recorded event leaf index used for proof-generation metric")
+	eventID := flag.String("event-id", "", "recorded event ID used for proof-generation metric (supported: leaf:<index>)")
+	metricsDir := flag.String("metrics-dir", "metrics", "directory where proof-generation metrics CSV is written")
 	flag.Parse()
 
-	if strings.TrimSpace(*deviceID) == "" {
+	if strings.TrimSpace(*deviceID) == "" && *leafIndex < 0 && strings.TrimSpace(*eventID) == "" {
 		log.Fatal("device ID is required; use -device <ID>")
 	}
 
 	tree, err := hmmr.LoadSubgroupEventStore(*hmmrStorePath, *hmmrEventArity, *hmmrEventSubgroup, *hmmrEventHash)
 	if err != nil {
 		log.Fatalf("load subgroup hmmr store: %v", err)
+	}
+	if *leafIndex >= 0 || strings.TrimSpace(*eventID) != "" {
+		targetLeafIndex := *leafIndex
+		if targetLeafIndex < 0 {
+			parsed, err := parseLeafIndexFromEventID(*eventID)
+			if err != nil {
+				log.Fatalf("parse event-id: %v", err)
+			}
+			targetLeafIndex = parsed
+		}
+
+		metric, err := tree.MeasureProofGenerationByLeafIndex(targetLeafIndex)
+		if err != nil {
+			log.Fatalf("measure proof generation: %v", err)
+		}
+		metricPath, err := saveProofGenerationMetricCSV(*metricsDir, metric)
+		if err != nil {
+			log.Fatalf("save proof-generation metric csv: %v", err)
+		}
+
+		fmt.Printf("Proof Generation Metric\n")
+		fmt.Printf("EventID: %s\n", metric.EventID)
+		fmt.Printf("LeafIndex: %d\n", metric.LeafIndex)
+		fmt.Printf("ProofGenerationTimeMs: %.6f\n", metric.ProofGenerationTimeMs)
+		fmt.Printf("TotalNumberOfRecordedEvents: %d\n", metric.TotalRecordedEvents)
+		fmt.Printf("ProofSizeBytes: %d\n", metric.ProofSizeBytes)
+		fmt.Printf("Metrics CSV written to: %s\n", metricPath)
+		return
 	}
 
 	verifiedEvents, root, err := tree.VerifyDeviceEvents(*deviceID)
@@ -101,6 +135,70 @@ func main() {
 	} else {
 		fmt.Printf("- Current device state not found in %s\n", *devicesPath)
 	}
+}
+
+func parseLeafIndexFromEventID(eventID string) (int, error) {
+	id := strings.TrimSpace(eventID)
+	if id == "" {
+		return -1, fmt.Errorf("empty event-id")
+	}
+
+	if strings.HasPrefix(id, "leaf:") {
+		return strconv.Atoi(strings.TrimPrefix(id, "leaf:"))
+	}
+	if strings.HasPrefix(id, "leaf-") {
+		return strconv.Atoi(strings.TrimPrefix(id, "leaf-"))
+	}
+	return strconv.Atoi(id)
+}
+
+func saveProofGenerationMetricCSV(dir string, metric *hmmr.ProofGenerationMetric) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	path := filepath.Join(dir, "hmmr_proof_generation_time.csv")
+	newFile := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		newFile = true
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	if newFile {
+		header := []string{
+			"timestamp_utc",
+			"event_id",
+			"leaf_index",
+			"proof_generation_time_ms",
+			"total_number_of_recorded_events",
+		}
+		if err := writer.Write(header); err != nil {
+			return "", err
+		}
+	}
+
+	record := []string{
+		metric.TimestampUTC.Format(time.RFC3339),
+		metric.EventID,
+		fmt.Sprintf("%d", metric.LeafIndex),
+		fmt.Sprintf("%.6f", metric.ProofGenerationTimeMs),
+		fmt.Sprintf("%d", metric.TotalRecordedEvents),
+	}
+	if err := writer.Write(record); err != nil {
+		return "", err
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 type evolutionSummary struct {

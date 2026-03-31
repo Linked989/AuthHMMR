@@ -61,6 +61,10 @@ HMMR verification CLI
   What is its decision history?
   Do the stored weight values evolve consistently and match the current device record?
 - It verifies each device event proof against the current HMMR root before reporting results.
+- Proof generation timing metric:
+  `go run ./cmd/verify-device -leaf-index 10`
+  `go run ./cmd/verify-device -event-id leaf:10`
+  This records `event_id`, `proof_generation_time_ms`, and `total_number_of_recorded_events` into `metrics/hmmr_proof_generation_time.csv`.
 
 Alternative runner
 - python3 scripts/run_all.py
@@ -75,6 +79,7 @@ Outputs
 - metrics/evaluator_count_scaling.csv: evaluator-count scaling points (selected evaluators vs network size)
 - metrics/communication_overhead_*.csv: per-decision protocol message counts (communication overhead model)
 - metrics/local_computation_metrics_*.csv: per-decision local computation timings (score calc, vote compute, score update, total)
+- metrics/hmmr_proof_generation_time.csv: HMMR proof generation timing points by event ID or leaf index
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
