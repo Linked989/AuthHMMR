@@ -74,6 +74,7 @@ Outputs
 - metrics/scalability_admission_latency.csv: scalability points (average admission latency vs candidate devices X)
 - metrics/evaluator_count_scaling.csv: evaluator-count scaling points (selected evaluators vs network size)
 - metrics/communication_overhead_*.csv: per-decision protocol message counts (communication overhead model)
+- metrics/local_computation_metrics_*.csv: per-decision local computation timings (score calc, vote compute, score update, total)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
