@@ -73,6 +73,7 @@ Outputs
 - metrics/auth_throughput_*.csv: auth throughput summary (devices/sec over auth window)
 - metrics/scalability_admission_latency.csv: scalability points (average admission latency vs candidate devices X)
 - metrics/evaluator_count_scaling.csv: evaluator-count scaling points (selected evaluators vs network size)
+- metrics/communication_overhead_*.csv: per-decision protocol message counts (communication overhead model)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
@@ -97,6 +98,7 @@ auth.go flags
 - -hmmr-hash: hash algorithm for leaves (default: sha256)
 - -voter-formula-a: coefficient `a` in `k = a * log_b(N)` for voter count (default: 2.0)
 - -voter-formula-b: base `b` in `k = a * log_b(N)` for voter count (default: 10.0)
+- -count-event-recording-message: include event-recording submission as a separate protocol message in communication-overhead metrics (default: false)
 
 Makefile
 - make run: generate devices, register devices, authenticate, build a block

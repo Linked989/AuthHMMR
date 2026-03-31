@@ -100,6 +100,7 @@ func main() {
 	authWait := flag.Bool("auth-wait", false, "wait for auth txs after submitting (requires -auth-async)")
 	voterFormulaA := flag.Float64("voter-formula-a", 2.0, "voter selection formula coefficient 'a' in k = a * log_b(N)")
 	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
+	countEventRecordingMessage := flag.Bool("count-event-recording-message", false, "count event recording submission as a separate protocol message")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -192,6 +193,12 @@ func main() {
 	commCostBytes := make([]int, 0, len(unauth))
 	metricDeviceIDs := make([]string, 0, len(unauth))
 	admissionLatenciesNs := make([]int64, 0, len(unauth))
+	protocolMessagesTotal := make([]int, 0, len(unauth))
+	msgAdmissionRequest := make([]int, 0, len(unauth))
+	msgEvaluatorSelection := make([]int, 0, len(unauth))
+	msgVotesSent := make([]int, 0, len(unauth))
+	msgFinalDecision := make([]int, 0, len(unauth))
+	msgEventRecording := make([]int, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
 	var newlyAuthenticated []SCDevice
@@ -246,6 +253,21 @@ func main() {
 		payload := buildTransactionPayload(dev.UUID, authenticate, yesCnt, tot-yesCnt, yesMap)
 		commCostBytes = append(commCostBytes, len(payload))
 		transactions = append(transactions, blockchain.NewTransaction("auth_result", payload, time.Now()))
+		admissionRequestCount := 1
+		evaluatorSelectionCount := tot
+		votesSentCount := tot
+		finalDecisionCount := 1
+		eventRecordingCount := 0
+		if *countEventRecordingMessage {
+			eventRecordingCount = 1
+		}
+		totalProtocolMessages := admissionRequestCount + evaluatorSelectionCount + votesSentCount + finalDecisionCount + eventRecordingCount
+		msgAdmissionRequest = append(msgAdmissionRequest, admissionRequestCount)
+		msgEvaluatorSelection = append(msgEvaluatorSelection, evaluatorSelectionCount)
+		msgVotesSent = append(msgVotesSent, votesSentCount)
+		msgFinalDecision = append(msgFinalDecision, finalDecisionCount)
+		msgEventRecording = append(msgEventRecording, eventRecordingCount)
+		protocolMessagesTotal = append(protocolMessagesTotal, totalProtocolMessages)
 
 		decision := "rejected"
 		if authenticate {
@@ -362,6 +384,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("save auth throughput csv: %v", err)
 	}
+	commOverheadCSVPath, err := saveCommunicationOverheadCSV(
+		MetricsDirectory,
+		metricDeviceIDs,
+		msgAdmissionRequest,
+		msgEvaluatorSelection,
+		msgVotesSent,
+		msgFinalDecision,
+		msgEventRecording,
+		protocolMessagesTotal,
+	)
+	if err != nil {
+		log.Fatalf("save communication overhead csv: %v", err)
+	}
 	avgAdmissionMs, avgAdmissionNs := averageLatency(admissionLatenciesNs)
 	scalabilityCSVPath, err := saveScalabilityAdmissionLatencyCSV(MetricsDirectory, len(unauth), avgAdmissionMs, avgAdmissionNs)
 	if err != nil {
@@ -400,6 +435,7 @@ func main() {
 	}
 	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
 	fmt.Printf("Throughput CSV written to: %s\n", throughputCSVPath)
+	fmt.Printf("Communication overhead CSV written to: %s\n", commOverheadCSVPath)
 	fmt.Printf("Scalability CSV written to: %s\n", scalabilityCSVPath)
 	fmt.Printf("Evaluator scaling CSV written to: %s\n", evaluatorScalingCSVPath)
 
@@ -409,12 +445,14 @@ func main() {
 
 	for i := range offChainTimesMs {
 		fmt.Printf("• Device #%d  ComputationalCost: %.3f ms (%d ns)   "+
-			"BlockProcessing: %.2f ms   CommunicationCost: %d bytes\n",
+			"BlockProcessing: %.2f ms   CommunicationCost: %d bytes   ProtocolMessages: %d\n",
 			i+1,
 			offChainTimesMs[i],
 			offChainTimesNs[i],
 			onChainTimesMs[i],
-			commCostBytes[i])
+			commCostBytes[i],
+			protocolMessagesTotal[i],
+		)
 	}
 	totalThroughput := 0.0
 	authenticatedThroughput := 0.0
@@ -430,6 +468,17 @@ func main() {
 		len(unauth), avgAdmissionMs, avgAdmissionNs)
 	fmt.Printf("Evaluator Count Scaling: network_size=%d, selected_evaluators=%d, candidates=%d\n",
 		len(iotDevs), voterCount, len(unauth))
+	avgProtocolMessages := 0.0
+	if len(protocolMessagesTotal) > 0 {
+		var sumMsgs int
+		for _, n := range protocolMessagesTotal {
+			sumMsgs += n
+		}
+		avgProtocolMessages = float64(sumMsgs) / float64(len(protocolMessagesTotal))
+	}
+	fmt.Printf("Communication Overhead: average %.6f protocol messages per admission decision\n", avgProtocolMessages)
+	fmt.Printf("Message model used: request=1, selection=%d, votes=%d, final=1, event_recording=%t\n",
+		voterCount, voterCount, *countEventRecordingMessage)
 	fmt.Println("==========================================================\n")
 }
 
@@ -1015,6 +1064,69 @@ func saveEvaluatorCountScalingCSV(
 	}
 	if err := writer.Write(record); err != nil {
 		return "", err
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func saveCommunicationOverheadCSV(
+	dir string,
+	deviceIDs []string,
+	admissionRequest []int,
+	evaluatorSelection []int,
+	votesSent []int,
+	finalDecision []int,
+	eventRecording []int,
+	total []int,
+) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+
+	filename := fmt.Sprintf("communication_overhead_%s.csv", time.Now().UTC().Format("20060102_150405"))
+	path := filepath.Join(dir, filename)
+
+	f, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	writer := csv.NewWriter(f)
+	defer writer.Flush()
+
+	header := []string{
+		"device_uuid",
+		"admission_request_messages",
+		"evaluator_selection_notification_messages",
+		"evaluator_vote_messages",
+		"final_decision_notification_messages",
+		"event_recording_submission_messages",
+		"total_protocol_messages_per_decision",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", err
+	}
+
+	for i := range total {
+		uuid := ""
+		if i < len(deviceIDs) {
+			uuid = deviceIDs[i]
+		}
+		record := []string{
+			uuid,
+			fmt.Sprintf("%d", admissionRequest[i]),
+			fmt.Sprintf("%d", evaluatorSelection[i]),
+			fmt.Sprintf("%d", votesSent[i]),
+			fmt.Sprintf("%d", finalDecision[i]),
+			fmt.Sprintf("%d", eventRecording[i]),
+			fmt.Sprintf("%d", total[i]),
+		}
+		if err := writer.Write(record); err != nil {
+			return "", err
+		}
 	}
 	if err := writer.Error(); err != nil {
 		return "", err
