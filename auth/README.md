@@ -13,7 +13,7 @@ Quickstart
    go run ./cmd/generate-devices
 2) Generate registered devices.
    go run ./cmd/reg
-   go run ./cmd/reg -async
+   go run ./cmd/reg -async 
 3) Run authentication and build a block.
    go run ./cmd/auth
    go run ./cmd/auth -auth-async && go run ./cmd/verify-device -leaf-index 10
@@ -31,6 +31,10 @@ Quickstart
    go run ./cmd/clear-devices
    go run ./cmd/clear-devices -force
    go run ./cmd/clear-devices -uuid PJLIZV5O
+
+
+united commands
+go run ./cmd/clear-devices -force && go run ./cmd/reg -async && go run ./cmd/auth -auth-async && go run ./cmd/verify-device -leaf-index 10 && go run ./cmd/clear-devices -force
 
 HMMR event log
 - Authentication decisions are appended to the subgroup-compressed HMMR event store from `work/hmmr_v9_subgroup.go`.
@@ -106,6 +110,9 @@ auth.go flags
 - -voter-formula-a: coefficient `a` in `k = a * log_b(N)` for voter count (default: 2.0)
 - -voter-formula-b: base `b` in `k = a * log_b(N)` for voter count (default: 10.0)
 - -count-event-recording-message: include event-recording submission as a separate protocol message in communication-overhead metrics (default: false)
+- -continue-on-besu-error: continue processing other devices on Besu failures (default: true)
+- -besu-retries: retries for Besu submit/receipt operations (default: 3)
+- -besu-retry-delay-ms: delay between Besu retries in milliseconds (default: 250)
 
 Makefile
 - make run: generate devices, register devices, authenticate, build a block

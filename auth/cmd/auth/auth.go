@@ -98,6 +98,9 @@ func main() {
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	authAsync := flag.Bool("auth-async", false, "submit auth txs without waiting for mining")
 	authWait := flag.Bool("auth-wait", false, "wait for auth txs after submitting (requires -auth-async)")
+	continueOnBesuError := flag.Bool("continue-on-besu-error", true, "continue processing other devices if one Besu authentication call fails")
+	besuRetries := flag.Int("besu-retries", 3, "number of retries for Besu auth submission/receipt wait")
+	besuRetryDelayMs := flag.Int("besu-retry-delay-ms", 250, "delay between Besu retries in milliseconds")
 	voterFormulaA := flag.Float64("voter-formula-a", 2.0, "voter selection formula coefficient 'a' in k = a * log_b(N)")
 	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
 	countEventRecordingMessage := flag.Bool("count-event-recording-message", false, "count event recording submission as a separate protocol message")
@@ -213,6 +216,8 @@ func main() {
 	}
 
 	var authTxs []common.Hash
+	authSubmitFailed := make([]string, 0)
+	authReceiptFailed := make([]string, 0)
 	authLoopStart := time.Now()
 	for _, dev := range unauth {
 		deviceAdmissionStart := time.Now()
@@ -294,20 +299,40 @@ func main() {
 		}
 
 		if besuClient != nil {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 			if *authAsync {
-				txHash, err := besuClient.AuthenticateDeviceAsync(ctx, dev.UUID, authenticate)
-				cancel()
+				txHash, err := authenticateDeviceAsyncWithRetry(
+					besuClient,
+					dev.UUID,
+					authenticate,
+					*besuRetries,
+					time.Duration(*besuRetryDelayMs)*time.Millisecond,
+				)
 				if err != nil {
-					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+					if *continueOnBesuError {
+						log.Printf("besu authenticate device %s failed: %v", dev.UUID, err)
+						authSubmitFailed = append(authSubmitFailed, dev.UUID)
+					} else {
+						log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+					}
+				} else {
+					authTxs = append(authTxs, txHash)
+					log.Printf("Submitted auth %s (tx %s)", dev.UUID, txHash.Hex())
 				}
-				authTxs = append(authTxs, txHash)
-				log.Printf("Submitted auth %s (tx %s)", dev.UUID, txHash.Hex())
 			} else {
-				err := besuClient.AuthenticateDevice(ctx, dev.UUID, authenticate)
-				cancel()
+				err := authenticateDeviceWithRetry(
+					besuClient,
+					dev.UUID,
+					authenticate,
+					*besuRetries,
+					time.Duration(*besuRetryDelayMs)*time.Millisecond,
+				)
 				if err != nil {
-					log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+					if *continueOnBesuError {
+						log.Printf("besu authenticate device %s failed: %v", dev.UUID, err)
+						authSubmitFailed = append(authSubmitFailed, dev.UUID)
+					} else {
+						log.Fatalf("besu authenticate device %s: %v", dev.UUID, err)
+					}
 				}
 			}
 		}
@@ -319,11 +344,19 @@ func main() {
 	if besuClient != nil && *authAsync && *authWait && len(authTxs) > 0 {
 		log.Printf("Waiting for %d auth transaction(s)...", len(authTxs))
 		for _, hash := range authTxs {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			err := besuClient.WaitForReceipt(ctx, hash)
-			cancel()
+			err := waitReceiptWithRetry(
+				besuClient,
+				hash,
+				*besuRetries,
+				time.Duration(*besuRetryDelayMs)*time.Millisecond,
+			)
 			if err != nil {
-				log.Fatalf("wait for auth tx %s: %v", hash.Hex(), err)
+				if *continueOnBesuError {
+					log.Printf("wait for auth tx %s failed: %v", hash.Hex(), err)
+					authReceiptFailed = append(authReceiptFailed, hash.Hex())
+				} else {
+					log.Fatalf("wait for auth tx %s: %v", hash.Hex(), err)
+				}
 			}
 		}
 	}
@@ -502,6 +535,10 @@ func main() {
 	fmt.Printf("Communication Overhead: average %.6f protocol messages per admission decision\n", avgProtocolMessages)
 	fmt.Printf("Message model used: request=1, selection=%d, votes=%d, final=1, event_recording=%t\n",
 		voterCount, voterCount, *countEventRecordingMessage)
+	if besuClient != nil {
+		fmt.Printf("Besu auth submission failures: %d\n", len(authSubmitFailed))
+		fmt.Printf("Besu auth receipt failures: %d\n", len(authReceiptFailed))
+	}
 	fmt.Printf("Local Computation Averages: score_calculation=%.6f ms, vote_computation=%.6f ms, score_update=%.6f ms, total=%.6f ms\n",
 		averageFloat64(scoreCalculationMs),
 		averageFloat64(voteComputationMs),
@@ -1102,6 +1139,70 @@ func saveEvaluatorCountScalingCSV(
 		return "", err
 	}
 	return path, nil
+}
+
+func authenticateDeviceWithRetry(client *besu.Client, uuid string, status bool, retries int, retryDelay time.Duration) error {
+	if retries < 1 {
+		retries = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= retries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		err := client.AuthenticateDevice(ctx, uuid, status)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt < retries {
+			time.Sleep(retryDelay)
+		}
+	}
+	return lastErr
+}
+
+func authenticateDeviceAsyncWithRetry(client *besu.Client, uuid string, status bool, retries int, retryDelay time.Duration) (common.Hash, error) {
+	if retries < 1 {
+		retries = 1
+	}
+	var (
+		lastErr error
+		hash    common.Hash
+	)
+	for attempt := 1; attempt <= retries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		h, err := client.AuthenticateDeviceAsync(ctx, uuid, status)
+		cancel()
+		if err == nil {
+			return h, nil
+		}
+		lastErr = err
+		hash = h
+		if attempt < retries {
+			time.Sleep(retryDelay)
+		}
+	}
+	return hash, lastErr
+}
+
+func waitReceiptWithRetry(client *besu.Client, txHash common.Hash, retries int, retryDelay time.Duration) error {
+	if retries < 1 {
+		retries = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= retries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		err := client.WaitForReceipt(ctx, txHash)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if attempt < retries {
+			time.Sleep(retryDelay)
+		}
+	}
+	return lastErr
 }
 
 func saveCommunicationOverheadCSV(

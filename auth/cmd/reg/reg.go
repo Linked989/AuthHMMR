@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"math/rand"
 	"os"
+	"strings"
 	"time"
 
 	"auth/internal/besu"
@@ -45,6 +46,9 @@ func main() {
 	uuidLen := flag.Int("uuid-length", defaultUUIDLength, "length of generated UUIDs")
 	outPath := flag.String("out", registeredDevicesFn, "output JSON for registered devices")
 	async := flag.Bool("async", false, "submit on-chain registrations without waiting for mining")
+	continueOnBesuError := flag.Bool("continue-on-besu-error", true, "continue processing other devices if one Besu registration fails")
+	besuRetries := flag.Int("besu-retries", 3, "number of retries for Besu registration submission")
+	besuRetryDelayMs := flag.Int("besu-retry-delay-ms", 250, "delay between Besu registration retries in milliseconds")
 	flag.Parse()
 
 	rand.Seed(time.Now().UnixNano())
@@ -87,34 +91,32 @@ func main() {
 		return
 	}
 
+	failed := make([]string, 0)
+	submitted := 0
 	for i := range devices {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		var (
-			txHash common.Hash
-			err    error
+		txHash, err := addDeviceWithRetry(
+			besuClient,
+			devices[i],
+			*async,
+			*besuRetries,
+			time.Duration(*besuRetryDelayMs)*time.Millisecond,
 		)
-		if *async {
-			txHash, err = besuClient.AddDeviceAsync(
-				ctx,
-				devices[i].UUID,
-				scoreToUint(devices[i].TrustScore),
-				scoreToUint(devices[i].HardwareScore),
-				scoreToUint(devices[i].SecurityScore),
-			)
-		} else {
-			txHash, err = besuClient.AddDevice(
-				ctx,
-				devices[i].UUID,
-				scoreToUint(devices[i].TrustScore),
-				scoreToUint(devices[i].HardwareScore),
-				scoreToUint(devices[i].SecurityScore),
-			)
-		}
-		cancel()
 		if err != nil {
+			if *continueOnBesuError {
+				log.Printf("register device %s on besu failed: %v", devices[i].UUID, err)
+				failed = append(failed, devices[i].UUID)
+				continue
+			}
 			log.Fatalf("register device %s on besu: %v", devices[i].UUID, err)
 		}
+		submitted++
 		fmt.Printf("Submitted registration %s (tx %s)\n", devices[i].UUID, txHash.Hex())
+	}
+	if len(failed) > 0 {
+		log.Printf("Registration summary: submitted=%d failed=%d", submitted, len(failed))
+		log.Printf("Failed UUIDs: %s", strings.Join(failed, ", "))
+	} else {
+		log.Printf("Registration summary: submitted=%d failed=0", submitted)
 	}
 }
 
@@ -143,4 +145,44 @@ func scoreToUint(score float64) *big.Int {
 		rounded = 0
 	}
 	return big.NewInt(rounded)
+}
+
+func addDeviceWithRetry(client *besu.Client, dev Device, async bool, retries int, retryDelay time.Duration) (common.Hash, error) {
+	if retries < 1 {
+		retries = 1
+	}
+	var lastErr error
+	for attempt := 1; attempt <= retries; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		var (
+			txHash common.Hash
+			err    error
+		)
+		if async {
+			txHash, err = client.AddDeviceAsync(
+				ctx,
+				dev.UUID,
+				scoreToUint(dev.TrustScore),
+				scoreToUint(dev.HardwareScore),
+				scoreToUint(dev.SecurityScore),
+			)
+		} else {
+			txHash, err = client.AddDevice(
+				ctx,
+				dev.UUID,
+				scoreToUint(dev.TrustScore),
+				scoreToUint(dev.HardwareScore),
+				scoreToUint(dev.SecurityScore),
+			)
+		}
+		cancel()
+		if err == nil {
+			return txHash, nil
+		}
+		lastErr = err
+		if attempt < retries {
+			time.Sleep(retryDelay)
+		}
+	}
+	return common.Hash{}, lastErr
 }
