@@ -73,8 +73,10 @@ func main() {
 		fmt.Printf("EventID: %s\n", metric.EventID)
 		fmt.Printf("LeafIndex: %d\n", metric.LeafIndex)
 		fmt.Printf("ProofGenerationTimeMs: %.6f\n", metric.ProofGenerationTimeMs)
+		fmt.Printf("VerificationTimeMs: %.6f\n", metric.VerificationTimeMs)
 		fmt.Printf("TotalNumberOfRecordedEvents: %d\n", metric.TotalRecordedEvents)
 		fmt.Printf("ProofSizeBytes: %d\n", metric.ProofSizeBytes)
+		fmt.Printf("ProofVerified: %t\n", metric.ProofVerified)
 		fmt.Printf("Metrics CSV written to: %s\n", metricPath)
 		return
 	}
@@ -178,6 +180,9 @@ func saveProofGenerationMetricCSV(dir string, metric *hmmr.ProofGenerationMetric
 			"event_id",
 			"leaf_index",
 			"proof_generation_time_ms",
+			"verification_time_ms",
+			"proof_size_bytes",
+			"proof_verified",
 			"total_number_of_recorded_events",
 		}
 		if err := writer.Write(header); err != nil {
@@ -190,6 +195,9 @@ func saveProofGenerationMetricCSV(dir string, metric *hmmr.ProofGenerationMetric
 		metric.EventID,
 		fmt.Sprintf("%d", metric.LeafIndex),
 		fmt.Sprintf("%.6f", metric.ProofGenerationTimeMs),
+		fmt.Sprintf("%.6f", metric.VerificationTimeMs),
+		fmt.Sprintf("%d", metric.ProofSizeBytes),
+		fmt.Sprintf("%t", metric.ProofVerified),
 		fmt.Sprintf("%d", metric.TotalRecordedEvents),
 	}
 	if err := writer.Write(record); err != nil {

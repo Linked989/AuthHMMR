@@ -67,8 +67,10 @@ type ProofGenerationMetric struct {
 	EventID               string    `json:"event_id"`
 	LeafIndex             int       `json:"leaf_index"`
 	ProofGenerationTimeMs float64   `json:"proof_generation_time_ms"`
+	VerificationTimeMs    float64   `json:"verification_time_ms"`
 	TotalRecordedEvents   int       `json:"total_number_of_recorded_events"`
 	ProofSizeBytes        int       `json:"proof_size_bytes"`
+	ProofVerified         bool      `json:"proof_verified"`
 	TimestampUTC          time.Time `json:"timestamp_utc"`
 }
 
@@ -280,13 +282,19 @@ func (s *SubgroupEventStore) MeasureProofGenerationByLeafIndex(leafIdx int) (*Pr
 	if err != nil {
 		return nil, err
 	}
-	elapsed := time.Since(start)
+	generationElapsed := time.Since(start)
+	verifyStart := time.Now()
+	verified := s.engine.Verify(s.leafData[leafIdx], proof)
+	verificationElapsed := time.Since(verifyStart)
+
 	return &ProofGenerationMetric{
 		EventID:               fmt.Sprintf("leaf:%d", leafIdx),
 		LeafIndex:             leafIdx,
-		ProofGenerationTimeMs: float64(elapsed.Nanoseconds()) / 1e6,
+		ProofGenerationTimeMs: float64(generationElapsed.Nanoseconds()) / 1e6,
+		VerificationTimeMs:    float64(verificationElapsed.Nanoseconds()) / 1e6,
 		TotalRecordedEvents:   len(s.events),
 		ProofSizeBytes:        subgroupProofSizeBytes(proof),
+		ProofVerified:         verified,
 		TimestampUTC:          time.Now().UTC(),
 	}, nil
 }

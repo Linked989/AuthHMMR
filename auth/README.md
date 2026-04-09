@@ -16,13 +16,14 @@ Quickstart
    go run ./cmd/reg -async
 3) Run authentication and build a block.
    go run ./cmd/auth
-   go run ./cmd/auth -auth-async
+   go run ./cmd/auth -auth-async && go run ./cmd/verify-device -leaf-index 10
    go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.
    go run ./cmd/detail-dev
 5) Verify one device against the authentication subgroup-HMMR.
    go run ./cmd/verify-device -device D_102
    go run ./cmd/verify-device -device D_102 -hmmr-store custom_hmmr_events.json
+   go run ./cmd/verify-device -leaf-index 10 # test proof generation time
 6) Query devices from the smart contract.
    go run ./cmd/query-devices
    go run ./cmd/query-devices -authenticated
@@ -64,7 +65,7 @@ HMMR verification CLI
 - Proof generation timing metric:
   `go run ./cmd/verify-device -leaf-index 10`
   `go run ./cmd/verify-device -event-id leaf:10`
-  This records `event_id`, `proof_generation_time_ms`, and `total_number_of_recorded_events` into `metrics/hmmr_proof_generation_time.csv`.
+  This records `event_id`, `proof_generation_time_ms`, `verification_time_ms`, `proof_size_bytes`, and `total_number_of_recorded_events` into `metrics/hmmr_proof_generation_time.csv`.
 
 Alternative runner
 - python3 scripts/run_all.py

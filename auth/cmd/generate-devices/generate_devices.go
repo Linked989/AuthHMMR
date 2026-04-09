@@ -29,7 +29,7 @@ type IoTDevice struct {
 }
 
 func main() {
-	const deviceCount = 10
+	const deviceCount = 30
 	mrand.Seed(time.Now().UnixNano())
 
 	devices := make([]IoTDevice, deviceCount)
