@@ -81,6 +81,13 @@ type DeviceHistory struct {
 	TrustScoreHistory   []float64
 }
 
+type admissionDecisionObservation struct {
+	DeviceUUID     string
+	GroundTruth    string
+	SystemDecision string
+	PFinal         float64
+}
+
 var deviceHistories = make(map[string]*DeviceHistory)
 
 func main() {
@@ -105,6 +112,7 @@ func main() {
 	voterFormulaA := flag.Float64("voter-formula-a", 2.0, "voter selection formula coefficient 'a' in k = a * log_b(N)")
 	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
 	countEventRecordingMessage := flag.Bool("count-event-recording-message", false, "count event recording submission as a separate protocol message")
+	consistencyRunID := flag.String("consistency-run-id", "", "optional run identifier for decision consistency records (default: auto timestamp)")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -189,8 +197,13 @@ func main() {
 	scoreUpdateMs := make([]float64, 0, len(unauth))
 	totalLocalComputationMs := make([]float64, 0, len(unauth))
 	protocolMessagesTotal := make([]int, 0, len(unauth))
+	admissionObservations := make([]admissionDecisionObservation, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
+	tpCount := 0
+	tnCount := 0
+	fpCount := 0
+	fnCount := 0
 	var newlyAuthenticated []SCDevice
 
 	latestBlock, err := blockchain.LoadLatest(*blocksDir)
@@ -223,6 +236,27 @@ func main() {
 
 		yesPct := float64(yesCnt) / float64(tot)
 		authenticate := yesPct >= FinalConsensus
+		groundTruth := groundTruthLabel(dev)
+		systemDecision := "reject"
+		if authenticate {
+			systemDecision = "accept"
+		}
+		admissionObservations = append(admissionObservations, admissionDecisionObservation{
+			DeviceUUID:     dev.UUID,
+			GroundTruth:    groundTruth,
+			SystemDecision: systemDecision,
+			PFinal:         yesPct,
+		})
+		switch {
+		case groundTruth == "legit" && authenticate:
+			tpCount++
+		case groundTruth == "malicious" && !authenticate:
+			tnCount++
+		case groundTruth == "malicious" && authenticate:
+			fpCount++
+		case groundTruth == "legit" && !authenticate:
+			fnCount++
+		}
 
 		if authenticate {
 			successCount++
@@ -405,6 +439,11 @@ func main() {
 	avgProtocolMessages := averageInt(protocolMessagesTotal)
 	avgCommBytes := averageInt(commCostBytes)
 	avgCommKB := avgCommBytes / 1024.0
+	totalDecisions := tpCount + tnCount + fpCount + fnCount
+	admissionAccuracy := 0.0
+	if totalDecisions > 0 {
+		admissionAccuracy = float64(tpCount+tnCount) / float64(totalDecisions)
+	}
 
 	finalMetricsPath, err := internalmetrics.AppendFinalMetricsCSV(MetricsDirectory, internalmetrics.FinalMetricsRecord{
 		TimestampUTC:                 time.Now().UTC(),
@@ -420,6 +459,34 @@ func main() {
 	})
 	if err != nil {
 		log.Fatalf("save final metrics csv: %v", err)
+	}
+	admissionAccuracyCSVPath, err := internalmetrics.AppendAdmissionAccuracyCSV(MetricsDirectory, internalmetrics.AdmissionAccuracyRecord{
+		TimestampUTC:      time.Now().UTC(),
+		CandidateDevicesX: len(unauth),
+		TP:                tpCount,
+		TN:                tnCount,
+		FP:                fpCount,
+		FN:                fnCount,
+		Accuracy:          admissionAccuracy,
+	})
+	if err != nil {
+		log.Fatalf("save admission accuracy csv: %v", err)
+	}
+	consistencyObservations := make([]internalmetrics.DecisionConsistencyObservation, 0, len(admissionObservations))
+	for _, item := range admissionObservations {
+		consistencyObservations = append(consistencyObservations, internalmetrics.DecisionConsistencyObservation{
+			DeviceUUID:     item.DeviceUUID,
+			SystemDecision: item.SystemDecision,
+			PFinal:         item.PFinal,
+		})
+	}
+	decisionConsistencyCSVPath, decisionConsistencyResults, err := internalmetrics.AppendDecisionConsistencyCSV(
+		MetricsDirectory,
+		*consistencyRunID,
+		consistencyObservations,
+	)
+	if err != nil {
+		log.Fatalf("save decision consistency csv: %v", err)
 	}
 
 	fmt.Printf("\nBlock %d written to %s (%d tx, build %.2f ms, persist %.2f ms)\n",
@@ -453,6 +520,10 @@ func main() {
 		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
 	fmt.Printf("Final metrics CSV written to: %s\n", finalMetricsPath)
+	fmt.Printf("Admission accuracy CSV written to: %s\n", admissionAccuracyCSVPath)
+	if decisionConsistencyCSVPath != "" {
+		fmt.Printf("Decision consistency CSV (append) written to: %s\n", decisionConsistencyCSVPath)
+	}
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -486,6 +557,11 @@ func main() {
 	fmt.Printf("Communication Overhead: average %.6f protocol messages per admission decision\n", avgProtocolMessages)
 	fmt.Printf("Message model used: request=1, selection=%d, votes=%d, final=1, event_recording=%t\n",
 		voterCount, voterCount, *countEventRecordingMessage)
+	fmt.Printf("Admission Accuracy: %.6f (TP=%d, TN=%d, FP=%d, FN=%d)\n",
+		admissionAccuracy, tpCount, tnCount, fpCount, fnCount)
+	if len(decisionConsistencyResults) > 0 {
+		fmt.Printf("Decision Consistency (run-level average): %.6f\n", averageDecisionConsistency(decisionConsistencyResults))
+	}
 	if besuClient != nil {
 		fmt.Printf("Besu auth submission failures: %d\n", len(authSubmitFailed))
 		fmt.Printf("Besu auth receipt failures: %d\n", len(authReceiptFailed))
@@ -1064,4 +1140,25 @@ func averageInt(values []int) float64 {
 		sum += v
 	}
 	return float64(sum) / float64(len(values))
+}
+
+func groundTruthLabel(dev SCDevice) string {
+	if dev.IsMalicious {
+		return "malicious"
+	}
+	if dev.Weight >= MinAcceptableTotal {
+		return "legit"
+	}
+	return "malicious"
+}
+
+func averageDecisionConsistency(results []internalmetrics.DecisionConsistencyResult) float64 {
+	if len(results) == 0 {
+		return 0
+	}
+	var sum float64
+	for _, item := range results {
+		sum += item.DecisionConsistency
+	}
+	return sum / float64(len(results))
 }

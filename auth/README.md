@@ -81,6 +81,9 @@ Outputs
 - sc_devices.json: registered devices (updated after auth)
 - hmmr_events.json: persisted HMMR authentication event log
 - metrics/final_metrics.csv: consolidated metrics CSV (admission latency, throughput, communication cost, communication overhead, evaluator count scaling, proof generation time, proof size, verification time)
+- metrics/admission_accuracy.csv: TP/TN/FP/FN + admission accuracy per auth run
+- metrics/decision_consistency.csv: per-device decision consistency across repeated auth runs (append mode)
+- metrics/decision_consistency_state.json: persistent state used to compute running consistency and `p_final` stddev
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
@@ -106,9 +109,19 @@ auth.go flags
 - -voter-formula-a: coefficient `a` in `k = a * log_b(N)` for voter count (default: 2.0)
 - -voter-formula-b: base `b` in `k = a * log_b(N)` for voter count (default: 10.0)
 - -count-event-recording-message: include event-recording submission as a separate protocol message in communication-overhead metrics (default: false)
+- -consistency-run-id: optional label used when appending decision consistency rows (default: auto UTC timestamp)
 - -continue-on-besu-error: continue processing other devices on Besu failures (default: true)
 - -besu-retries: retries for Besu submit/receipt operations (default: 3)
 - -besu-retry-delay-ms: delay between Besu retries in milliseconds (default: 250)
+
+Admission Accuracy and Decision Consistency
+- `Admission Accuracy` compares `ground_truth` vs `system_decision`:
+  `TP` legit accepted, `TN` malicious rejected, `FP` malicious accepted, `FN` legit rejected.
+  `accuracy = (TP + TN) / (TP + TN + FP + FN)`.
+- Ground truth used by auth:
+  `malicious` if `isMalicious=true`, otherwise fallback by score threshold (`weight >= 225 => legit`, else malicious).
+- `Decision Consistency` is stored in append mode in `metrics/decision_consistency.csv`.
+  Each auth run adds rows; for each device the file keeps running accept/reject counts, dominant decision frequency, and `p_final` standard deviation.
 
 Makefile
 - make run: generate devices, register devices, authenticate, build a block
