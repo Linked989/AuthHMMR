@@ -15,9 +15,10 @@ Quickstart
    go run ./cmd/reg
    go run ./cmd/reg -async
    go run ./cmd/reg-profile -n 1000 -profile "70 30"
-   go run ./cmd/reg-profile -n 1000 -profile "70 30" -async
+   go run ./cmd/reg-profile -n 50 -profile "100 0" -async
 3) Run authentication and build a block.
    go run ./cmd/auth
+   go run ./cmd/auth -auth-async
    go run ./cmd/auth -auth-async && go run ./cmd/verify-device -leaf-index 10
    go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.

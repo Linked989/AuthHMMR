@@ -375,6 +375,9 @@ func main() {
 	if err := saveRegisteredDevices(*devicesPath, scDevices); err != nil {
 		log.Fatalf("saveRegisteredDevices: %v", err)
 	}
+	if err := saveIoTDevices(IoTDevicesJSON, iotDevs); err != nil {
+		log.Fatalf("saveIoTDevices: %v", err)
+	}
 	if err := eventStore.Save(*hmmrStorePath); err != nil {
 		log.Fatalf("save subgroup hmmr store: %v", err)
 	}
@@ -608,6 +611,14 @@ func scoreToUint(score float64) *big.Int {
 }
 
 func saveRegisteredDevices(filename string, devices []SCDevice) error {
+	data, err := json.MarshalIndent(devices, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filename, data, 0o644)
+}
+
+func saveIoTDevices(filename string, devices []IoTDevice) error {
 	data, err := json.MarshalIndent(devices, "", "  ")
 	if err != nil {
 		return err
