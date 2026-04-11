@@ -219,12 +219,28 @@ func main() {
 		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
-		voters := randomSubset(iotDevs, voterCount)
+		eligibleVoters := filterEligibleVotersByMinWeight(iotDevs, 10)
+		effectiveVoterCount := voterCount
+		if len(eligibleVoters) < voterCount {
+			effectiveVoterCount = voterCount - 1
+		}
+		if effectiveVoterCount > len(eligibleVoters) {
+			effectiveVoterCount = len(eligibleVoters)
+		}
+		if effectiveVoterCount < 0 {
+			effectiveVoterCount = 0
+		}
+		voters := randomSubset(eligibleVoters, effectiveVoterCount)
 		voterIDs := make([]string, len(voters))
 		for i := range voters {
 			voterIDs[i] = voters[i].UUID
 		}
-		log.Printf("Selected voters for %s (k=%d): %s", dev.UUID, len(voters), strings.Join(voterIDs, ", "))
+		log.Printf("Selected voters for %s (k=%d, eligible_weight_gt_10=%d): %s", dev.UUID, len(voters), len(eligibleVoters), strings.Join(voterIDs, ", "))
+		if len(voters) < 3 {
+			log.Printf("Not enough eligible voters for %s: selected=%d, minimum required=3; admission decision will be REJECT", dev.UUID, len(voters))
+		} else if len(voters) == voterCount-1 {
+			log.Printf("Using fallback voter count for %s: requested_k=%d, used_k=%d", dev.UUID, voterCount, len(voters))
+		}
 
 		t0 := time.Now()
 		yesCnt, tot, yesMap, scoreCalcDur, voteCompDur := doOffChainVoting(voters, dev)
@@ -234,8 +250,11 @@ func main() {
 		scoreCalculationMs = append(scoreCalculationMs, float64(scoreCalcDur.Nanoseconds())/1e6)
 		voteComputationMs = append(voteComputationMs, float64(voteCompDur.Nanoseconds())/1e6)
 
-		yesPct := float64(yesCnt) / float64(tot)
-		authenticate := yesPct >= FinalConsensus
+		yesPct := 0.0
+		if tot > 0 {
+			yesPct = float64(yesCnt) / float64(tot)
+		}
+		authenticate := tot > 2 && yesPct >= FinalConsensus
 		groundTruth := groundTruthLabel(dev)
 		systemDecision := "reject"
 		if authenticate {
@@ -628,6 +647,9 @@ func saveIoTDevices(filename string, devices []IoTDevice) error {
 
 func randomSubset(devices []IoTDevice, count int) []IoTDevice {
 	n := len(devices)
+	if count < 0 {
+		count = 0
+	}
 	if count > n {
 		count = n
 	}
@@ -637,6 +659,16 @@ func randomSubset(devices []IoTDevice, count int) []IoTDevice {
 		subset[i], subset[j] = subset[j], subset[i]
 	})
 	return subset[:count]
+}
+
+func filterEligibleVotersByMinWeight(devices []IoTDevice, minExclusiveWeight uint) []IoTDevice {
+	eligible := make([]IoTDevice, 0, len(devices))
+	for _, d := range devices {
+		if d.Weight > minExclusiveWeight {
+			eligible = append(eligible, d)
+		}
+	}
+	return eligible
 }
 
 func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]bool, time.Duration, time.Duration) {
