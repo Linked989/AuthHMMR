@@ -644,8 +644,10 @@ func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]boo
 	voteCompStart := time.Now()
 	var wg sync.WaitGroup
 	type voteResult struct {
-		uuid string
-		vote bool
+		uuid        string
+		isMalicious bool
+		vote        bool
+		reason      string
 	}
 	resultsChan := make(chan voteResult, totalVotes)
 
@@ -654,42 +656,67 @@ func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]boo
 		go func(v IoTDevice) {
 			defer wg.Done()
 			var vote bool
+			reason := "score_based"
 			if !v.IsMalicious && (trustVal < 30 || hardwareVal < 30 || securityVal < 30) {
+				vote = false
+				parts := make([]string, 0, 3)
 				if trustVal < 30 {
-					log.Printf("Registered Device %s: TrustScore %.0f is below threshold (30) for voter %s", rd.UUID, trustVal, v.UUID)
+					parts = append(parts, "trust<30")
 				}
 				if hardwareVal < 30 {
-					log.Printf("Registered Device %s: HardwareScore %.0f is below threshold (30) for voter %s", rd.UUID, hardwareVal, v.UUID)
+					parts = append(parts, "hardware<30")
 				}
 				if securityVal < 30 {
-					log.Printf("Registered Device %s: SecurityScore %.0f is below threshold (30) for voter %s", rd.UUID, securityVal, v.UUID)
+					parts = append(parts, "security<30")
 				}
-				vote = false
+				reason = "fails_min_thresholds: " + strings.Join(parts, ",")
 			} else {
 				vote = rdTotal >= MinAcceptableTotal
 				if v.IsMalicious && rdTotal < MinAcceptableTotal {
 					vote = true
-					log.Printf("Malicious voter %s overrides vote: YES (despite RD_total < %.2f)", v.UUID, MinAcceptableTotal)
+					reason = "malicious_override_yes"
 				}
 				if v.IsMalicious && rdTotal >= MinAcceptableTotal {
 					vote = false
-					log.Printf("Malicious voter %s overrides vote: NO (despite RD_total >= %.2f)", v.UUID, MinAcceptableTotal)
+					reason = "malicious_override_no"
 				}
 			}
-			resultsChan <- voteResult{uuid: v.UUID, vote: vote}
+			resultsChan <- voteResult{uuid: v.UUID, isMalicious: v.IsMalicious, vote: vote, reason: reason}
 		}(d)
 	}
 
 	wg.Wait()
 	close(resultsChan)
 
+	resultsByUUID := make(map[string]voteResult, totalVotes)
 	for res := range resultsChan {
 		votes[res.uuid] = res.vote
+		resultsByUUID[res.uuid] = res
 		if res.vote {
 			yesCount++
 		}
 	}
 	voteCompDur := time.Since(voteCompStart)
+
+	log.Printf("Voting details for %s:", rd.UUID)
+	for _, voter := range voters {
+		res, ok := resultsByUUID[voter.UUID]
+		if !ok {
+			continue
+		}
+		voteText := "NO"
+		if res.vote {
+			voteText = "YES"
+		}
+		log.Printf("  - voter=%s malicious=%t vote=%s reason=%s", res.uuid, res.isMalicious, voteText, res.reason)
+	}
+	log.Printf("Voting summary for %s: yes=%d no=%d consensus=%.2f%% threshold=%.2f%%",
+		rd.UUID,
+		yesCount,
+		totalVotes-yesCount,
+		100.0*float64(yesCount)/math.Max(float64(totalVotes), 1),
+		100.0*FinalConsensus,
+	)
 
 	return yesCount, totalVotes, votes, scoreCalcDur, voteCompDur
 }
