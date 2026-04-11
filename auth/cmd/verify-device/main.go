@@ -1,19 +1,18 @@
 package main
 
 import (
-	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
 	"auth/hmmr"
+	internalmetrics "auth/internal/metrics"
 )
 
 const registeredDevicesFn = "sc_devices.json"
@@ -64,7 +63,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("measure proof generation: %v", err)
 		}
-		metricPath, err := saveProofGenerationMetricCSV(*metricsDir, metric)
+		metricPath, err := internalmetrics.AppendFinalMetricsCSV(*metricsDir, internalmetrics.FinalMetricsRecord{
+			TimestampUTC:          metric.TimestampUTC,
+			MetricSource:          "hmmr_proof_metric",
+			ProofGenerationTimeMs: metric.ProofGenerationTimeMs,
+			ProofSizeBytes:        metric.ProofSizeBytes,
+			VerificationTimeMs:    metric.VerificationTimeMs,
+			TotalRecordedEvents:   metric.TotalRecordedEvents,
+		})
 		if err != nil {
 			log.Fatalf("save proof-generation metric csv: %v", err)
 		}
@@ -152,61 +158,6 @@ func parseLeafIndexFromEventID(eventID string) (int, error) {
 		return strconv.Atoi(strings.TrimPrefix(id, "leaf-"))
 	}
 	return strconv.Atoi(id)
-}
-
-func saveProofGenerationMetricCSV(dir string, metric *hmmr.ProofGenerationMetric) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	path := filepath.Join(dir, "hmmr_proof_generation_time.csv")
-	newFile := false
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		newFile = true
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-	defer writer.Flush()
-
-	if newFile {
-		header := []string{
-			"timestamp_utc",
-			"event_id",
-			"leaf_index",
-			"proof_generation_time_ms",
-			"verification_time_ms",
-			"proof_size_bytes",
-			"proof_verified",
-			"total_number_of_recorded_events",
-		}
-		if err := writer.Write(header); err != nil {
-			return "", err
-		}
-	}
-
-	record := []string{
-		metric.TimestampUTC.Format(time.RFC3339),
-		metric.EventID,
-		fmt.Sprintf("%d", metric.LeafIndex),
-		fmt.Sprintf("%.6f", metric.ProofGenerationTimeMs),
-		fmt.Sprintf("%.6f", metric.VerificationTimeMs),
-		fmt.Sprintf("%d", metric.ProofSizeBytes),
-		fmt.Sprintf("%t", metric.ProofVerified),
-		fmt.Sprintf("%d", metric.TotalRecordedEvents),
-	}
-	if err := writer.Write(record); err != nil {
-		return "", err
-	}
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 type evolutionSummary struct {

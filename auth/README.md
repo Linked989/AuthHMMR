@@ -69,7 +69,7 @@ HMMR verification CLI
 - Proof generation timing metric:
   `go run ./cmd/verify-device -leaf-index 10`
   `go run ./cmd/verify-device -event-id leaf:10`
-  This records `event_id`, `proof_generation_time_ms`, `verification_time_ms`, `proof_size_bytes`, and `total_number_of_recorded_events` into `metrics/hmmr_proof_generation_time.csv`.
+  This appends proof metrics (`proof_generation_time_ms`, `verification_time_ms`, `proof_size_bytes`) into `metrics/final_metrics.csv`.
 
 Alternative runner
 - python3 scripts/run_all.py
@@ -78,13 +78,7 @@ Outputs
 - iot_devices.json: off-chain voters
 - sc_devices.json: registered devices (updated after auth)
 - hmmr_events.json: persisted HMMR authentication event log
-- metrics/auth_metrics_*.csv: per-device auth metrics (computational cost, block processing, communication cost)
-- metrics/auth_throughput_*.csv: auth throughput summary (devices/sec over auth window)
-- metrics/scalability_admission_latency.csv: scalability points (average admission latency vs candidate devices X)
-- metrics/evaluator_count_scaling.csv: evaluator-count scaling points (selected evaluators vs network size)
-- metrics/communication_overhead_*.csv: per-decision protocol message counts (communication overhead model)
-- metrics/local_computation_metrics_*.csv: per-decision local computation timings (score calc, vote compute, score update, total)
-- metrics/hmmr_proof_generation_time.csv: HMMR proof generation timing points by event ID or leaf index
+- metrics/final_metrics.csv: consolidated metrics CSV (admission latency, throughput, communication cost, communication overhead, evaluator count scaling, proof generation time, proof size, verification time)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 

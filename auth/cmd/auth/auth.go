@@ -21,6 +21,7 @@ import (
 	"auth/hmmr"
 	"auth/internal/besu"
 	"auth/internal/blockchain"
+	internalmetrics "auth/internal/metrics"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/joho/godotenv"
@@ -178,34 +179,16 @@ func main() {
 		int(math.Ceil(rawK)),
 		voterCount,
 	)
-	evaluatorScalingCSVPath, err := saveEvaluatorCountScalingCSV(
-		MetricsDirectory,
-		len(iotDevs),
-		nTargets,
-		voterCount,
-		*voterFormulaA,
-		*voterFormulaBase,
-		rawK,
-	)
-	if err != nil {
-		log.Fatalf("save evaluator count scaling csv: %v", err)
-	}
 
 	offChainTimesMs := make([]float64, 0, len(unauth))
 	offChainTimesNs := make([]int64, 0, len(unauth))
 	commCostBytes := make([]int, 0, len(unauth))
-	metricDeviceIDs := make([]string, 0, len(unauth))
 	admissionLatenciesNs := make([]int64, 0, len(unauth))
 	scoreCalculationMs := make([]float64, 0, len(unauth))
 	voteComputationMs := make([]float64, 0, len(unauth))
 	scoreUpdateMs := make([]float64, 0, len(unauth))
 	totalLocalComputationMs := make([]float64, 0, len(unauth))
 	protocolMessagesTotal := make([]int, 0, len(unauth))
-	msgAdmissionRequest := make([]int, 0, len(unauth))
-	msgEvaluatorSelection := make([]int, 0, len(unauth))
-	msgVotesSent := make([]int, 0, len(unauth))
-	msgFinalDecision := make([]int, 0, len(unauth))
-	msgEventRecording := make([]int, 0, len(unauth))
 	transactions := make([]blockchain.Transaction, 0, len(unauth))
 	successCount := 0
 	var newlyAuthenticated []SCDevice
@@ -235,7 +218,6 @@ func main() {
 		offChainDur := time.Since(t0)
 		offChainTimesMs = append(offChainTimesMs, float64(offChainDur.Milliseconds()))
 		offChainTimesNs = append(offChainTimesNs, offChainDur.Nanoseconds())
-		metricDeviceIDs = append(metricDeviceIDs, dev.UUID)
 		scoreCalculationMs = append(scoreCalculationMs, float64(scoreCalcDur.Nanoseconds())/1e6)
 		voteComputationMs = append(voteComputationMs, float64(voteCompDur.Nanoseconds())/1e6)
 
@@ -278,11 +260,6 @@ func main() {
 			eventRecordingCount = 1
 		}
 		totalProtocolMessages := admissionRequestCount + evaluatorSelectionCount + votesSentCount + finalDecisionCount + eventRecordingCount
-		msgAdmissionRequest = append(msgAdmissionRequest, admissionRequestCount)
-		msgEvaluatorSelection = append(msgEvaluatorSelection, evaluatorSelectionCount)
-		msgVotesSent = append(msgVotesSent, votesSentCount)
-		msgFinalDecision = append(msgFinalDecision, finalDecisionCount)
-		msgEventRecording = append(msgEventRecording, eventRecordingCount)
 		protocolMessagesTotal = append(protocolMessagesTotal, totalProtocolMessages)
 
 		decision := "rejected"
@@ -420,42 +397,29 @@ func main() {
 	for i := range onChainTimesMs {
 		onChainTimesMs[i] = perTxBlockTime
 	}
-	metricsPath, err := saveAuthMetricsCSV(MetricsDirectory, metricDeviceIDs, offChainTimesMs, offChainTimesNs, onChainTimesMs, commCostBytes)
-	if err != nil {
-		log.Fatalf("save auth metrics csv: %v", err)
-	}
-	throughputCSVPath, err := saveAuthThroughputCSV(MetricsDirectory, len(unauth), successCount, authLoopDuration)
-	if err != nil {
-		log.Fatalf("save auth throughput csv: %v", err)
-	}
-	commOverheadCSVPath, err := saveCommunicationOverheadCSV(
-		MetricsDirectory,
-		metricDeviceIDs,
-		msgAdmissionRequest,
-		msgEvaluatorSelection,
-		msgVotesSent,
-		msgFinalDecision,
-		msgEventRecording,
-		protocolMessagesTotal,
-	)
-	if err != nil {
-		log.Fatalf("save communication overhead csv: %v", err)
-	}
-	localComputationCSVPath, err := saveLocalComputationMetricsCSV(
-		MetricsDirectory,
-		metricDeviceIDs,
-		scoreCalculationMs,
-		voteComputationMs,
-		scoreUpdateMs,
-		totalLocalComputationMs,
-	)
-	if err != nil {
-		log.Fatalf("save local computation metrics csv: %v", err)
-	}
 	avgAdmissionMs, avgAdmissionNs := averageLatency(admissionLatenciesNs)
-	scalabilityCSVPath, err := saveScalabilityAdmissionLatencyCSV(MetricsDirectory, len(unauth), avgAdmissionMs, avgAdmissionNs)
+	totalThroughput := 0.0
+	if authLoopDuration > 0 {
+		totalThroughput = float64(len(unauth)) / authLoopDuration.Seconds()
+	}
+	avgProtocolMessages := averageInt(protocolMessagesTotal)
+	avgCommBytes := averageInt(commCostBytes)
+	avgCommKB := avgCommBytes / 1024.0
+
+	finalMetricsPath, err := internalmetrics.AppendFinalMetricsCSV(MetricsDirectory, internalmetrics.FinalMetricsRecord{
+		TimestampUTC:                 time.Now().UTC(),
+		MetricSource:                 "auth_run",
+		CandidateDevicesX:            len(unauth),
+		TotalNetworkSize:             len(iotDevs),
+		SelectedEvaluatorsK:          voterCount,
+		AdmissionLatencyMs:           avgAdmissionMs,
+		ThroughputDevicesPerSec:      totalThroughput,
+		CommunicationCostBytesAvg:    avgCommBytes,
+		CommunicationCostKBAvg:       avgCommKB,
+		CommunicationOverheadMsgsAvg: avgProtocolMessages,
+	})
 	if err != nil {
-		log.Fatalf("save scalability admission latency csv: %v", err)
+		log.Fatalf("save final metrics csv: %v", err)
 	}
 
 	fmt.Printf("\nBlock %d written to %s (%d tx, build %.2f ms, persist %.2f ms)\n",
@@ -488,12 +452,7 @@ func main() {
 	if *sensorEnabled && mode == "accumulate" {
 		fmt.Printf("Total leaves used for block: %d\n", len(leafPayloads))
 	}
-	fmt.Printf("Metrics CSV written to: %s\n", metricsPath)
-	fmt.Printf("Throughput CSV written to: %s\n", throughputCSVPath)
-	fmt.Printf("Communication overhead CSV written to: %s\n", commOverheadCSVPath)
-	fmt.Printf("Local computation CSV written to: %s\n", localComputationCSVPath)
-	fmt.Printf("Scalability CSV written to: %s\n", scalabilityCSVPath)
-	fmt.Printf("Evaluator scaling CSV written to: %s\n", evaluatorScalingCSVPath)
+	fmt.Printf("Final metrics CSV written to: %s\n", finalMetricsPath)
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")
 	fmt.Printf("Authentication-success rate: %.2f %%\n\n",
@@ -510,7 +469,7 @@ func main() {
 			protocolMessagesTotal[i],
 		)
 	}
-	totalThroughput := 0.0
+	totalThroughput = 0.0
 	authenticatedThroughput := 0.0
 	if authLoopDuration > 0 {
 		totalThroughput = float64(len(unauth)) / authLoopDuration.Seconds()
@@ -524,14 +483,6 @@ func main() {
 		len(unauth), avgAdmissionMs, avgAdmissionNs)
 	fmt.Printf("Evaluator Count Scaling: network_size=%d, selected_evaluators=%d, candidates=%d\n",
 		len(iotDevs), voterCount, len(unauth))
-	avgProtocolMessages := 0.0
-	if len(protocolMessagesTotal) > 0 {
-		var sumMsgs int
-		for _, n := range protocolMessagesTotal {
-			sumMsgs += n
-		}
-		avgProtocolMessages = float64(sumMsgs) / float64(len(protocolMessagesTotal))
-	}
 	fmt.Printf("Communication Overhead: average %.6f protocol messages per admission decision\n", avgProtocolMessages)
 	fmt.Printf("Message model used: request=1, selection=%d, votes=%d, final=1, event_recording=%t\n",
 		voterCount, voterCount, *countEventRecordingMessage)
@@ -891,134 +842,6 @@ func appendAccumulatedLeaves(path string, leaves [][]byte, leafSize int) error {
 	return writer.Flush()
 }
 
-func saveAuthMetricsCSV(
-	dir string,
-	deviceIDs []string,
-	computationalMs []float64,
-	computationalNs []int64,
-	blockProcessingMs []float64,
-	communicationBytes []int,
-) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	filename := fmt.Sprintf("auth_metrics_%s.csv", time.Now().UTC().Format("20060102_150405"))
-	path := filepath.Join(dir, filename)
-
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-	defer writer.Flush()
-
-	header := []string{
-		"device_uuid",
-		"computational_cost_ms",
-		"computational_cost_ns",
-		"block_processing_ms",
-		"block_processing_ns",
-		"communication_cost_bytes",
-		"communication_cost_kb",
-	}
-	if err := writer.Write(header); err != nil {
-		return "", err
-	}
-
-	rows := len(computationalMs)
-	for i := 0; i < rows; i++ {
-		uuid := ""
-		if i < len(deviceIDs) {
-			uuid = deviceIDs[i]
-		}
-
-		blockMs := 0.0
-		if i < len(blockProcessingMs) {
-			blockMs = blockProcessingMs[i]
-		}
-
-		commBytes := 0
-		if i < len(communicationBytes) {
-			commBytes = communicationBytes[i]
-		}
-
-		record := []string{
-			uuid,
-			fmt.Sprintf("%.3f", computationalMs[i]),
-			fmt.Sprintf("%d", computationalNs[i]),
-			fmt.Sprintf("%.3f", blockMs),
-			fmt.Sprintf("%d", int64(math.Round(blockMs*1e6))),
-			fmt.Sprintf("%d", commBytes),
-			fmt.Sprintf("%.6f", float64(commBytes)/1024.0),
-		}
-
-		if err := writer.Write(record); err != nil {
-			return "", err
-		}
-	}
-
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-	return path, nil
-}
-
-func saveAuthThroughputCSV(dir string, processedDevices int, authenticatedDevices int, authWindow time.Duration) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	filename := fmt.Sprintf("auth_throughput_%s.csv", time.Now().UTC().Format("20060102_150405"))
-	path := filepath.Join(dir, filename)
-
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-	defer writer.Flush()
-
-	header := []string{
-		"processed_devices",
-		"authenticated_devices",
-		"auth_window_seconds",
-		"throughput_devices_per_sec",
-		"authenticated_throughput_devices_per_sec",
-	}
-	if err := writer.Write(header); err != nil {
-		return "", err
-	}
-
-	windowSeconds := authWindow.Seconds()
-	throughput := 0.0
-	authenticatedThroughput := 0.0
-	if windowSeconds > 0 {
-		throughput = float64(processedDevices) / windowSeconds
-		authenticatedThroughput = float64(authenticatedDevices) / windowSeconds
-	}
-
-	record := []string{
-		fmt.Sprintf("%d", processedDevices),
-		fmt.Sprintf("%d", authenticatedDevices),
-		fmt.Sprintf("%.6f", windowSeconds),
-		fmt.Sprintf("%.6f", throughput),
-		fmt.Sprintf("%.6f", authenticatedThroughput),
-	}
-	if err := writer.Write(record); err != nil {
-		return "", err
-	}
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-
-	return path, nil
-}
-
 func averageLatency(samplesNs []int64) (float64, float64) {
 	if len(samplesNs) == 0 {
 		return 0, 0
@@ -1031,53 +854,6 @@ func averageLatency(samplesNs []int64) (float64, float64) {
 	avgNs := float64(totalNs) / float64(len(samplesNs))
 	avgMs := avgNs / 1e6
 	return avgMs, avgNs
-}
-
-func saveScalabilityAdmissionLatencyCSV(dir string, candidateDevices int, avgAdmissionMs float64, avgAdmissionNs float64) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	path := filepath.Join(dir, "scalability_admission_latency.csv")
-	newFile := false
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		newFile = true
-	}
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-	defer writer.Flush()
-
-	if newFile {
-		header := []string{
-			"timestamp_utc",
-			"candidate_devices_x",
-			"average_admission_latency_ms",
-			"average_admission_latency_ns",
-		}
-		if err := writer.Write(header); err != nil {
-			return "", err
-		}
-	}
-
-	record := []string{
-		time.Now().UTC().Format(time.RFC3339),
-		fmt.Sprintf("%d", candidateDevices),
-		fmt.Sprintf("%.6f", avgAdmissionMs),
-		fmt.Sprintf("%.0f", avgAdmissionNs),
-	}
-	if err := writer.Write(record); err != nil {
-		return "", err
-	}
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-	return path, nil
 }
 
 func saveEvaluatorCountScalingCSV(
@@ -1268,77 +1044,6 @@ func saveCommunicationOverheadCSV(
 	return path, nil
 }
 
-func saveLocalComputationMetricsCSV(
-	dir string,
-	deviceIDs []string,
-	scoreCalculationMs []float64,
-	voteComputationMs []float64,
-	scoreUpdateMs []float64,
-	totalLocalComputationMs []float64,
-) (string, error) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", err
-	}
-
-	filename := fmt.Sprintf("local_computation_metrics_%s.csv", time.Now().UTC().Format("20060102_150405"))
-	path := filepath.Join(dir, filename)
-
-	f, err := os.Create(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-
-	writer := csv.NewWriter(f)
-	defer writer.Flush()
-
-	header := []string{
-		"device_uuid",
-		"score_calculation_ms",
-		"vote_computation_ms",
-		"score_update_ms",
-		"total_local_computation_ms",
-	}
-	if err := writer.Write(header); err != nil {
-		return "", err
-	}
-
-	for i := range totalLocalComputationMs {
-		uuid := ""
-		if i < len(deviceIDs) {
-			uuid = deviceIDs[i]
-		}
-
-		record := []string{
-			uuid,
-			fmt.Sprintf("%.6f", scoreCalculationMs[i]),
-			fmt.Sprintf("%.6f", voteComputationMs[i]),
-			fmt.Sprintf("%.6f", scoreUpdateMs[i]),
-			fmt.Sprintf("%.6f", totalLocalComputationMs[i]),
-		}
-		if err := writer.Write(record); err != nil {
-			return "", err
-		}
-	}
-
-	avgRow := []string{
-		"AVERAGE",
-		fmt.Sprintf("%.6f", averageFloat64(scoreCalculationMs)),
-		fmt.Sprintf("%.6f", averageFloat64(voteComputationMs)),
-		fmt.Sprintf("%.6f", averageFloat64(scoreUpdateMs)),
-		fmt.Sprintf("%.6f", averageFloat64(totalLocalComputationMs)),
-	}
-	if err := writer.Write(avgRow); err != nil {
-		return "", err
-	}
-
-	if err := writer.Error(); err != nil {
-		return "", err
-	}
-
-	return path, nil
-}
-
 func averageFloat64(values []float64) float64 {
 	if len(values) == 0 {
 		return 0
@@ -1348,4 +1053,15 @@ func averageFloat64(values []float64) float64 {
 		sum += v
 	}
 	return sum / float64(len(values))
+}
+
+func averageInt(values []int) float64 {
+	if len(values) == 0 {
+		return 0
+	}
+	var sum int
+	for _, v := range values {
+		sum += v
+	}
+	return float64(sum) / float64(len(values))
 }
