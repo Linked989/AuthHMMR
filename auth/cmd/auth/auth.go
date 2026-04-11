@@ -56,19 +56,30 @@ type IoTDevice struct {
 
 // SCDevice holds the device metadata previously fetched from-chain, now local.
 type SCDevice struct {
-	UUID               string  `json:"uuid"`
-	TrustScore         float64 `json:"trustScore"`
-	HardwareScore      float64 `json:"hardwareScore"`
-	SecurityScore      float64 `json:"securityScore"`
-	Weight             float64 `json:"weight"`
-	Authenticated      bool    `json:"authenticated"`
-	LastActive         int64   `json:"lastActive"`
-	CorrectVotes       uint    `json:"correctVotes"`
-	IncorrectVotes     uint    `json:"incorrectVotes"`
-	VotesReceivedYes   uint    `json:"votesReceivedYes"`
-	VotesReceivedNo    uint    `json:"votesReceivedNo"`
-	VotesReceivedTotal uint    `json:"votesReceivedTotal"`
-	IsMalicious        bool    `json:"isMalicious,omitempty"`
+	UUID                            string  `json:"uuid"`
+	TrustScore                      float64 `json:"trustScore"`
+	HardwareScore                   float64 `json:"hardwareScore"`
+	SecurityScore                   float64 `json:"securityScore"`
+	DataIntegrityScore              float64 `json:"dataIntegrityScore,omitempty"`
+	ManufacturerCertScore           float64 `json:"manufacturerCertScore,omitempty"`
+	PerformanceScore                float64 `json:"performanceScore,omitempty"`
+	NetworkCompatibilityScore       float64 `json:"networkCompatibilityScore,omitempty"`
+	TrustUncertainty                float64 `json:"trustUncertainty,omitempty"`
+	HardwareUncertainty             float64 `json:"hardwareUncertainty,omitempty"`
+	SecurityUncertainty             float64 `json:"securityUncertainty,omitempty"`
+	DataIntegrityUncertainty        float64 `json:"dataIntegrityUncertainty,omitempty"`
+	ManufacturerCertUncertainty     float64 `json:"manufacturerCertUncertainty,omitempty"`
+	PerformanceUncertainty          float64 `json:"performanceUncertainty,omitempty"`
+	NetworkCompatibilityUncertainty float64 `json:"networkCompatibilityUncertainty,omitempty"`
+	Weight                          float64 `json:"weight"`
+	Authenticated                   bool    `json:"authenticated"`
+	LastActive                      int64   `json:"lastActive"`
+	CorrectVotes                    uint    `json:"correctVotes"`
+	IncorrectVotes                  uint    `json:"incorrectVotes"`
+	VotesReceivedYes                uint    `json:"votesReceivedYes"`
+	VotesReceivedNo                 uint    `json:"votesReceivedNo"`
+	VotesReceivedTotal              uint    `json:"votesReceivedTotal"`
+	IsMalicious                     bool    `json:"isMalicious,omitempty"`
 }
 
 // DeviceHistory tracks reputational progression for IoT devices.
@@ -113,6 +124,13 @@ func main() {
 	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
 	countEventRecordingMessage := flag.Bool("count-event-recording-message", false, "count event recording submission as a separate protocol message")
 	consistencyRunID := flag.String("consistency-run-id", "", "optional run identifier for decision consistency records (default: auto timestamp)")
+	weightOmegaHardware := flag.Float64("weight-omega-hardware", 1.0, "omega for hardwareScore in candidate weight formula")
+	weightOmegaSecurity := flag.Float64("weight-omega-security", 1.0, "omega for securityScore in candidate weight formula")
+	weightOmegaDataIntegrity := flag.Float64("weight-omega-data-integrity", 1.0, "omega for dataIntegrityScore in candidate weight formula")
+	weightOmegaManufacturerCert := flag.Float64("weight-omega-manufacturer-cert", 1.0, "omega for manufacturerCertScore in candidate weight formula")
+	weightOmegaPerformance := flag.Float64("weight-omega-performance", 1.0, "omega for performanceScore in candidate weight formula")
+	weightOmegaNetworkCompatibility := flag.Float64("weight-omega-network-compatibility", 1.0, "omega for networkCompatibilityScore in candidate weight formula")
+	weightLambda := flag.Float64("weight-lambda", 1.0, "lambda uncertainty penalty in candidate weight formula")
 	flag.Parse()
 
 	mr.Seed(time.Now().UnixNano())
@@ -243,7 +261,17 @@ func main() {
 		}
 
 		t0 := time.Now()
-		yesCnt, tot, yesMap, scoreCalcDur, voteCompDur := doOffChainVoting(voters, dev)
+		yesCnt, tot, yesWeight, totalWeight, candidateWeight, yesMap, scoreCalcDur, voteCompDur := doOffChainVoting(
+			voters,
+			dev,
+			*weightOmegaHardware,
+			*weightOmegaSecurity,
+			*weightOmegaDataIntegrity,
+			*weightOmegaManufacturerCert,
+			*weightOmegaPerformance,
+			*weightOmegaNetworkCompatibility,
+			*weightLambda,
+		)
 		offChainDur := time.Since(t0)
 		offChainTimesMs = append(offChainTimesMs, float64(offChainDur.Milliseconds()))
 		offChainTimesNs = append(offChainTimesNs, offChainDur.Nanoseconds())
@@ -251,8 +279,8 @@ func main() {
 		voteComputationMs = append(voteComputationMs, float64(voteCompDur.Nanoseconds())/1e6)
 
 		yesPct := 0.0
-		if tot > 0 {
-			yesPct = float64(yesCnt) / float64(tot)
+		if totalWeight > 0 {
+			yesPct = yesWeight / totalWeight
 		}
 		authenticate := tot > 2 && yesPct >= FinalConsensus
 		groundTruth := groundTruthLabel(dev)
@@ -280,6 +308,15 @@ func main() {
 		if authenticate {
 			successCount++
 		}
+		log.Printf(
+			"Weighted voting for %s: yes_weight=%.2f total_weight=%.2f ratio=%.4f candidate_weight=%.2f threshold=%.2f",
+			dev.UUID,
+			yesWeight,
+			totalWeight,
+			yesPct,
+			candidateWeight,
+			MinAcceptableTotal,
+		)
 
 		scIdx := indexByUUID[dev.UUID]
 		scDevices[scIdx].VotesReceivedYes += uint(yesCnt)
@@ -322,7 +359,7 @@ func main() {
 		if _, _, err := eventStore.AddEvent(hmmr.Event{
 			DeviceID:  dev.UUID,
 			Decision:  decision,
-			Weight:    dev.Weight,
+			Weight:    candidateWeight,
 			Timestamp: time.Now().UTC(),
 		}); err != nil {
 			log.Fatalf("append auth event to subgroup hmmr: %v", err)
@@ -671,18 +708,36 @@ func filterEligibleVotersByMinWeight(devices []IoTDevice, minExclusiveWeight uin
 	return eligible
 }
 
-func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]bool, time.Duration, time.Duration) {
+func doOffChainVoting(
+	voters []IoTDevice,
+	rd SCDevice,
+	omegaHardware float64,
+	omegaSecurity float64,
+	omegaDataIntegrity float64,
+	omegaManufacturerCert float64,
+	omegaPerformance float64,
+	omegaNetworkCompatibility float64,
+	lambda float64,
+) (int, int, float64, float64, float64, map[string]bool, time.Duration, time.Duration) {
 	votes := make(map[string]bool)
 	totalVotes := len(voters)
 	yesCount := 0
+	yesWeight := 0.0
+	totalWeight := 0.0
 
 	scoreCalcStart := time.Now()
-	trustVal := rd.TrustScore
-	hardwareVal := rd.HardwareScore
-	securityVal := rd.SecurityScore
-	rdTotal := trustVal + hardwareVal + securityVal
+	candidateWeight := calculateCandidateWeight(
+		rd,
+		omegaHardware,
+		omegaSecurity,
+		omegaDataIntegrity,
+		omegaManufacturerCert,
+		omegaPerformance,
+		omegaNetworkCompatibility,
+		lambda,
+	)
 	scoreCalcDur := time.Since(scoreCalcStart)
-	log.Printf("Registered Device %s total score = %.2f (Minimum required: %.2f)", rd.UUID, rdTotal, MinAcceptableTotal)
+	log.Printf("Registered Device %s computed weight = %.2f (Minimum required: %.2f)", rd.UUID, candidateWeight, MinAcceptableTotal)
 
 	voteCompStart := time.Now()
 	var wg sync.WaitGroup
@@ -700,26 +755,40 @@ func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]boo
 			defer wg.Done()
 			var vote bool
 			reason := "score_based"
-			if !v.IsMalicious && (trustVal < 30 || hardwareVal < 30 || securityVal < 30) {
+			if !v.IsMalicious && (rd.HardwareScore < 30 ||
+				rd.SecurityScore < 30 ||
+				rd.DataIntegrityScore < 30 ||
+				rd.ManufacturerCertScore < 30 ||
+				rd.PerformanceScore < 30 ||
+				rd.NetworkCompatibilityScore < 30) {
 				vote = false
-				parts := make([]string, 0, 3)
-				if trustVal < 30 {
-					parts = append(parts, "trust<30")
-				}
-				if hardwareVal < 30 {
+				parts := make([]string, 0, 6)
+				if rd.HardwareScore < 30 {
 					parts = append(parts, "hardware<30")
 				}
-				if securityVal < 30 {
+				if rd.SecurityScore < 30 {
 					parts = append(parts, "security<30")
+				}
+				if rd.DataIntegrityScore < 30 {
+					parts = append(parts, "data_integrity<30")
+				}
+				if rd.ManufacturerCertScore < 30 {
+					parts = append(parts, "manufacturer_cert<30")
+				}
+				if rd.PerformanceScore < 30 {
+					parts = append(parts, "performance<30")
+				}
+				if rd.NetworkCompatibilityScore < 30 {
+					parts = append(parts, "network_compatibility<30")
 				}
 				reason = "fails_min_thresholds: " + strings.Join(parts, ",")
 			} else {
-				vote = rdTotal >= MinAcceptableTotal
-				if v.IsMalicious && rdTotal < MinAcceptableTotal {
+				vote = candidateWeight >= MinAcceptableTotal
+				if v.IsMalicious && candidateWeight < MinAcceptableTotal {
 					vote = true
 					reason = "malicious_override_yes"
 				}
-				if v.IsMalicious && rdTotal >= MinAcceptableTotal {
+				if v.IsMalicious && candidateWeight >= MinAcceptableTotal {
 					vote = false
 					reason = "malicious_override_no"
 				}
@@ -735,8 +804,11 @@ func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]boo
 	for res := range resultsChan {
 		votes[res.uuid] = res.vote
 		resultsByUUID[res.uuid] = res
+		voterWeight := voterWeightByUUID(voters, res.uuid)
+		totalWeight += voterWeight
 		if res.vote {
 			yesCount++
+			yesWeight += voterWeight
 		}
 	}
 	voteCompDur := time.Since(voteCompStart)
@@ -761,7 +833,7 @@ func doOffChainVoting(voters []IoTDevice, rd SCDevice) (int, int, map[string]boo
 		100.0*FinalConsensus,
 	)
 
-	return yesCount, totalVotes, votes, scoreCalcDur, voteCompDur
+	return yesCount, totalVotes, yesWeight, totalWeight, candidateWeight, votes, scoreCalcDur, voteCompDur
 }
 
 func updateDevicesWeight(global []IoTDevice, subset []IoTDevice, yesMap map[string]bool, outcome bool) {
@@ -1231,4 +1303,38 @@ func averageDecisionConsistency(results []internalmetrics.DecisionConsistencyRes
 		sum += item.DecisionConsistency
 	}
 	return sum / float64(len(results))
+}
+
+func calculateCandidateWeight(
+	dev SCDevice,
+	omegaHardware float64,
+	omegaSecurity float64,
+	omegaDataIntegrity float64,
+	omegaManufacturerCert float64,
+	omegaPerformance float64,
+	omegaNetworkCompatibility float64,
+	lambda float64,
+) float64 {
+	weightedUtility := (omegaHardware * dev.HardwareScore) +
+		(omegaSecurity * dev.SecurityScore) +
+		(omegaDataIntegrity * dev.DataIntegrityScore) +
+		(omegaManufacturerCert * dev.ManufacturerCertScore) +
+		(omegaPerformance * dev.PerformanceScore) +
+		(omegaNetworkCompatibility * dev.NetworkCompatibilityScore)
+	uncertaintyPenalty := lambda * (dev.HardwareUncertainty +
+		dev.SecurityUncertainty +
+		dev.DataIntegrityUncertainty +
+		dev.ManufacturerCertUncertainty +
+		dev.PerformanceUncertainty +
+		dev.NetworkCompatibilityUncertainty)
+	return weightedUtility - uncertaintyPenalty
+}
+
+func voterWeightByUUID(voters []IoTDevice, uuid string) float64 {
+	for _, v := range voters {
+		if v.UUID == uuid {
+			return float64(v.Weight)
+		}
+	}
+	return 0
 }
