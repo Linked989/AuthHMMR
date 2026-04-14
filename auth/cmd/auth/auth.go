@@ -233,13 +233,9 @@ func main() {
 	authSubmitFailed := make([]string, 0)
 	authReceiptFailed := make([]string, 0)
 	authLoopStart := time.Now()
-	voterTrackingRunID := *consistencyRunID
-	if strings.TrimSpace(voterTrackingRunID) == "" {
-		voterTrackingRunID = authLoopStart.UTC().Format("20060102T150405Z")
-	}
 	firstVoterHonestCSVPath := ""
 	firstVoterMaliciousCSVPath := ""
-	for interactionIndex, dev := range unauth {
+	for _, dev := range unauth {
 		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
@@ -289,32 +285,12 @@ func main() {
 			yesPct = yesWeight / totalWeight
 		}
 		authenticate := tot > 2 && yesPct >= FinalConsensus
+		firstVoterUUID := ""
+		firstVoterIsMalicious := false
 		if len(voters) > 0 {
 			firstVoter := voters[0]
-			voteLabel := "NO"
-			if yesMap[firstVoter.UUID] {
-				voteLabel = "YES"
-			}
-			csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
-				TimestampUTC:          time.Now().UTC(),
-				RunID:                 voterTrackingRunID,
-				InteractionIndex:      interactionIndex + 1,
-				CandidateDeviceUUID:   dev.UUID,
-				VoterUUID:             firstVoter.UUID,
-				VoterIsMalicious:      firstVoter.IsMalicious,
-				Vote:                  voteLabel,
-				VoterTrustScore:       firstVoter.TrustScore,
-				VoterWeight:           firstVoter.Weight,
-				SelectedVoterPosition: 1,
-			})
-			if err != nil {
-				log.Fatalf("save first-voter trust/weight csv: %v", err)
-			}
-			if firstVoter.IsMalicious {
-				firstVoterMaliciousCSVPath = csvPath
-			} else {
-				firstVoterHonestCSVPath = csvPath
-			}
+			firstVoterUUID = firstVoter.UUID
+			firstVoterIsMalicious = firstVoter.IsMalicious
 		}
 		groundTruth := groundTruthLabel(dev)
 		systemDecision := "reject"
@@ -367,6 +343,24 @@ func main() {
 		scoreUpdateStart := time.Now()
 		updateDevicesWeight(iotDevs, voters, yesMap, authenticate)
 		scoreUpdateDur := time.Since(scoreUpdateStart)
+		if firstVoterUUID != "" {
+			updatedFirstVoter, ok := getIoTVoterByUUID(iotDevs, firstVoterUUID)
+			if ok {
+				csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
+					VoterIsMalicious:    firstVoterIsMalicious,
+					TrustScoreAfterVote: updatedFirstVoter.TrustScore,
+					WeightAfterVote:     updatedFirstVoter.Weight,
+				})
+				if err != nil {
+					log.Fatalf("save first-voter trust/weight csv: %v", err)
+				}
+				if firstVoterIsMalicious {
+					firstVoterMaliciousCSVPath = csvPath
+				} else {
+					firstVoterHonestCSVPath = csvPath
+				}
+			}
+		}
 		scoreUpdateMs = append(scoreUpdateMs, float64(scoreUpdateDur.Nanoseconds())/1e6)
 		totalLocalMs := float64(scoreCalcDur.Nanoseconds()+voteCompDur.Nanoseconds()+scoreUpdateDur.Nanoseconds()) / 1e6
 		totalLocalComputationMs = append(totalLocalComputationMs, totalLocalMs)
@@ -1376,4 +1370,13 @@ func voterWeightByUUID(voters []IoTDevice, uuid string) float64 {
 		}
 	}
 	return 0
+}
+
+func getIoTVoterByUUID(voters []IoTDevice, uuid string) (IoTDevice, bool) {
+	for _, v := range voters {
+		if v.UUID == uuid {
+			return v, true
+		}
+	}
+	return IoTDevice{}, false
 }

@@ -2,10 +2,9 @@ package metrics
 
 import (
 	"encoding/csv"
-	"fmt"
 	"os"
 	"path/filepath"
-	"time"
+	"strconv"
 )
 
 const (
@@ -14,16 +13,9 @@ const (
 )
 
 type VoterInteractionRecord struct {
-	TimestampUTC          time.Time
-	RunID                 string
-	InteractionIndex      int
-	CandidateDeviceUUID   string
-	VoterUUID             string
-	VoterIsMalicious      bool
-	Vote                  string
-	VoterTrustScore       float64
-	VoterWeight           uint
-	SelectedVoterPosition int
+	VoterIsMalicious    bool
+	TrustScoreAfterVote float64
+	WeightAfterVote     uint
 }
 
 func AppendVoterInteractionCSV(dir string, record VoterInteractionRecord) (string, error) {
@@ -53,41 +45,17 @@ func AppendVoterInteractionCSV(dir string, record VoterInteractionRecord) (strin
 
 	if newFile {
 		header := []string{
-			"timestamp_utc",
-			"run_id",
-			"interaction_index",
-			"candidate_device_uuid",
-			"voter_uuid",
-			"voter_is_malicious",
-			"vote",
-			"voter_trust_score",
-			"voter_weight",
-			"selected_voter_position",
+			"trust_score_after_vote",
+			"weight_after_vote",
 		}
 		if err := w.Write(header); err != nil {
 			return "", err
 		}
 	}
 
-	ts := record.TimestampUTC
-	if ts.IsZero() {
-		ts = time.Now().UTC()
-	}
-	if record.RunID == "" {
-		record.RunID = ts.Format("20060102T150405Z")
-	}
-
 	row := []string{
-		ts.Format(time.RFC3339),
-		record.RunID,
-		fmt.Sprintf("%d", record.InteractionIndex),
-		record.CandidateDeviceUUID,
-		record.VoterUUID,
-		fmt.Sprintf("%t", record.VoterIsMalicious),
-		record.Vote,
-		fmt.Sprintf("%.6f", record.VoterTrustScore),
-		fmt.Sprintf("%d", record.VoterWeight),
-		fmt.Sprintf("%d", record.SelectedVoterPosition),
+		strconv.FormatFloat(record.TrustScoreAfterVote, 'f', 6, 64),
+		strconv.FormatUint(uint64(record.WeightAfterVote), 10),
 	}
 	if err := w.Write(row); err != nil {
 		return "", err
@@ -95,6 +63,5 @@ func AppendVoterInteractionCSV(dir string, record VoterInteractionRecord) (strin
 	if err := w.Error(); err != nil {
 		return "", err
 	}
-
 	return path, nil
 }
