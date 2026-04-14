@@ -881,12 +881,13 @@ func doOffChainVoting(
 
 func updateDevicesWeight(global []IoTDevice, subset []IoTDevice, yesMap map[string]bool, outcome bool) {
 	const (
-		maxWeight = 100.0
-		minWeight = 10.0
-		LTrust    = 100.0
-		bTrust    = 1.0
-		cTrust    = 0.5
-		penalty   = 10.0
+		maxWeight               = 100.0
+		minWeight               = 10.0
+		LTrust                  = 100.0
+		bTrust                  = 1.0
+		cTrust                  = 0.02302585093 // calibrated so trust reaches ~99.999 around ~500 correct interactions
+		trustPromotionThreshold = 99.999
+		penalty                 = 10.0
 	)
 	const weightIncrement = 2.0
 
@@ -904,13 +905,13 @@ func updateDevicesWeight(global []IoTDevice, subset []IoTDevice, yesMap map[stri
 					global[i].LastAuthenticationResult = "Authenticated"
 
 					newTrust := LTrust * math.Exp(-bTrust*math.Exp(-cTrust*float64(global[i].CorrectVoteCount)))
-					if newTrust >= LTrust {
+					if newTrust >= trustPromotionThreshold {
 						newWeight := float64(global[i].Weight) + weightIncrement
 						if newWeight > maxWeight {
 							newWeight = maxWeight
 						}
 						global[i].Weight = uint(newWeight + 0.5)
-						newTrust = 1.0
+						newTrust = 0.0
 						global[i].CorrectVoteCount = 0
 					}
 					global[i].TrustScore = newTrust
