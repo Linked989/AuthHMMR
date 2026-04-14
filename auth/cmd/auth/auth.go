@@ -884,8 +884,8 @@ func updateDevicesWeight(global []IoTDevice, subset []IoTDevice, yesMap map[stri
 		maxWeight               = 100.0
 		minWeight               = 10.0
 		LTrust                  = 100.0
-		bTrust                  = 1.0
-		cTrust                  = 0.02302585093 // calibrated so trust reaches ~99.999 around ~500 correct interactions
+		bTrust                  = 4.726 // calibrated so first post-reset step is ~1.0
+		cTrust                  = 0.0261
 		trustPromotionThreshold = 99.999
 		penalty                 = 10.0
 	)
