@@ -233,7 +233,13 @@ func main() {
 	authSubmitFailed := make([]string, 0)
 	authReceiptFailed := make([]string, 0)
 	authLoopStart := time.Now()
-	for _, dev := range unauth {
+	voterTrackingRunID := *consistencyRunID
+	if strings.TrimSpace(voterTrackingRunID) == "" {
+		voterTrackingRunID = authLoopStart.UTC().Format("20060102T150405Z")
+	}
+	firstVoterHonestCSVPath := ""
+	firstVoterMaliciousCSVPath := ""
+	for interactionIndex, dev := range unauth {
 		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
@@ -283,6 +289,33 @@ func main() {
 			yesPct = yesWeight / totalWeight
 		}
 		authenticate := tot > 2 && yesPct >= FinalConsensus
+		if len(voters) > 0 {
+			firstVoter := voters[0]
+			voteLabel := "NO"
+			if yesMap[firstVoter.UUID] {
+				voteLabel = "YES"
+			}
+			csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
+				TimestampUTC:          time.Now().UTC(),
+				RunID:                 voterTrackingRunID,
+				InteractionIndex:      interactionIndex + 1,
+				CandidateDeviceUUID:   dev.UUID,
+				VoterUUID:             firstVoter.UUID,
+				VoterIsMalicious:      firstVoter.IsMalicious,
+				Vote:                  voteLabel,
+				VoterTrustScore:       firstVoter.TrustScore,
+				VoterWeight:           firstVoter.Weight,
+				SelectedVoterPosition: 1,
+			})
+			if err != nil {
+				log.Fatalf("save first-voter trust/weight csv: %v", err)
+			}
+			if firstVoter.IsMalicious {
+				firstVoterMaliciousCSVPath = csvPath
+			} else {
+				firstVoterHonestCSVPath = csvPath
+			}
+		}
 		groundTruth := groundTruthLabel(dev)
 		systemDecision := "reject"
 		if authenticate {
@@ -582,6 +615,12 @@ func main() {
 	fmt.Printf("Admission accuracy CSV written to: %s\n", admissionAccuracyCSVPath)
 	if decisionConsistencyCSVPath != "" {
 		fmt.Printf("Decision consistency CSV (append) written to: %s\n", decisionConsistencyCSVPath)
+	}
+	if firstVoterHonestCSVPath != "" {
+		fmt.Printf("First-voter trust/weight CSV (honest) written to: %s\n", firstVoterHonestCSVPath)
+	}
+	if firstVoterMaliciousCSVPath != "" {
+		fmt.Printf("First-voter trust/weight CSV (malicious) written to: %s\n", firstVoterMaliciousCSVPath)
 	}
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")

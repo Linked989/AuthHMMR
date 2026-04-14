@@ -86,6 +86,8 @@ Outputs
 - metrics/admission_accuracy.csv: TP/TN/FP/FN + admission accuracy per auth run
 - metrics/decision_consistency.csv: per-device decision consistency across repeated auth runs (append mode)
 - metrics/decision_consistency_state.json: persistent state used to compute running consistency and `p_final` stddev
+- metrics/voter_trust_weight_honest.csv: per interaction, first selected voter trust/weight snapshot for non-malicious voters
+- metrics/voter_trust_weight_malicious.csv: per interaction, first selected voter trust/weight snapshot for malicious voters
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
