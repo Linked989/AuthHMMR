@@ -124,6 +124,7 @@ func main() {
 	voterFormulaBase := flag.Float64("voter-formula-b", 10.0, "voter selection formula base 'b' in k = a * log_b(N), must be > 1")
 	countEventRecordingMessage := flag.Bool("count-event-recording-message", false, "count event recording submission as a separate protocol message")
 	consistencyRunID := flag.String("consistency-run-id", "", "optional run identifier for decision consistency records (default: auto timestamp)")
+	trackedVoterUUID := flag.String("tracked-voter-uuid", "", "track trust/weight CSV only for this voter UUID (default: first IoT voter in file)")
 	weightOmegaHardware := flag.Float64("weight-omega-hardware", 1.0, "omega for hardwareScore in candidate weight formula")
 	weightOmegaSecurity := flag.Float64("weight-omega-security", 1.0, "omega for securityScore in candidate weight formula")
 	weightOmegaDataIntegrity := flag.Float64("weight-omega-data-integrity", 1.0, "omega for dataIntegrityScore in candidate weight formula")
@@ -148,6 +149,15 @@ func main() {
 		log.Fatalf("loadIoTDevices: %v", err)
 	}
 	log.Printf("Loaded %d IoT voters", len(iotDevs))
+	if len(iotDevs) == 0 {
+		log.Fatalf("no IoT voters available")
+	}
+
+	trackedVoter := strings.TrimSpace(*trackedVoterUUID)
+	if trackedVoter == "" {
+		trackedVoter = iotDevs[0].UUID
+	}
+	log.Printf("Tracking trust/weight for single voter UUID: %s", trackedVoter)
 
 	scDevices, err := loadRegisteredDevices(*devicesPath)
 	if err != nil {
@@ -233,8 +243,8 @@ func main() {
 	authSubmitFailed := make([]string, 0)
 	authReceiptFailed := make([]string, 0)
 	authLoopStart := time.Now()
-	firstVoterHonestCSVPath := ""
-	firstVoterMaliciousCSVPath := ""
+	trackedVoterHonestCSVPath := ""
+	trackedVoterMaliciousCSVPath := ""
 	for _, dev := range unauth {
 		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
@@ -285,12 +295,12 @@ func main() {
 			yesPct = yesWeight / totalWeight
 		}
 		authenticate := tot > 2 && yesPct >= FinalConsensus
-		firstVoterUUID := ""
-		firstVoterIsMalicious := false
-		if len(voters) > 0 {
-			firstVoter := voters[0]
-			firstVoterUUID = firstVoter.UUID
-			firstVoterIsMalicious = firstVoter.IsMalicious
+		trackedVoterParticipated := false
+		for _, v := range voters {
+			if v.UUID == trackedVoter {
+				trackedVoterParticipated = true
+				break
+			}
 		}
 		groundTruth := groundTruthLabel(dev)
 		systemDecision := "reject"
@@ -343,21 +353,21 @@ func main() {
 		scoreUpdateStart := time.Now()
 		updateDevicesWeight(iotDevs, voters, yesMap, authenticate)
 		scoreUpdateDur := time.Since(scoreUpdateStart)
-		if firstVoterUUID != "" {
-			updatedFirstVoter, ok := getIoTVoterByUUID(iotDevs, firstVoterUUID)
+		if trackedVoterParticipated {
+			updatedTrackedVoter, ok := getIoTVoterByUUID(iotDevs, trackedVoter)
 			if ok {
 				csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
-					VoterIsMalicious:    firstVoterIsMalicious,
-					TrustScoreAfterVote: updatedFirstVoter.TrustScore,
-					WeightAfterVote:     updatedFirstVoter.Weight,
+					VoterIsMalicious:    updatedTrackedVoter.IsMalicious,
+					TrustScoreAfterVote: updatedTrackedVoter.TrustScore,
+					WeightAfterVote:     updatedTrackedVoter.Weight,
 				})
 				if err != nil {
-					log.Fatalf("save first-voter trust/weight csv: %v", err)
+					log.Fatalf("save tracked-voter trust/weight csv: %v", err)
 				}
-				if firstVoterIsMalicious {
-					firstVoterMaliciousCSVPath = csvPath
+				if updatedTrackedVoter.IsMalicious {
+					trackedVoterMaliciousCSVPath = csvPath
 				} else {
-					firstVoterHonestCSVPath = csvPath
+					trackedVoterHonestCSVPath = csvPath
 				}
 			}
 		}
@@ -610,11 +620,11 @@ func main() {
 	if decisionConsistencyCSVPath != "" {
 		fmt.Printf("Decision consistency CSV (append) written to: %s\n", decisionConsistencyCSVPath)
 	}
-	if firstVoterHonestCSVPath != "" {
-		fmt.Printf("First-voter trust/weight CSV (honest) written to: %s\n", firstVoterHonestCSVPath)
+	if trackedVoterHonestCSVPath != "" {
+		fmt.Printf("Tracked-voter trust/weight CSV (honest) written to: %s\n", trackedVoterHonestCSVPath)
 	}
-	if firstVoterMaliciousCSVPath != "" {
-		fmt.Printf("First-voter trust/weight CSV (malicious) written to: %s\n", firstVoterMaliciousCSVPath)
+	if trackedVoterMaliciousCSVPath != "" {
+		fmt.Printf("Tracked-voter trust/weight CSV (malicious) written to: %s\n", trackedVoterMaliciousCSVPath)
 	}
 
 	fmt.Println("\n====================  METRIC SUMMARY  ====================")

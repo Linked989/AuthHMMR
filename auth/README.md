@@ -15,7 +15,7 @@ Quickstart
    go run ./cmd/reg
    go run ./cmd/reg -async
    go run ./cmd/reg-profile -n 1000 -profile "70 30"
-   go run ./cmd/reg-profile -n 50 -profile "100 0" -async
+   go run ./cmd/reg-profile -n 600 -profile "100 0" -async
    go run ./cmd/reg-profile -n 1000 -profile "70 30" -weight-omega-hardware 1.0 -weight-omega-security 1.0 -weight-omega-data-integrity 1.0 -weight-omega-manufacturer-cert 1.0 -weight-omega-performance 1.0 -weight-omega-network-compatibility 1.0 -weight-lambda 1.0
 3) Run authentication and build a block.
    go run ./cmd/auth
@@ -86,8 +86,8 @@ Outputs
 - metrics/admission_accuracy.csv: TP/TN/FP/FN + admission accuracy per auth run
 - metrics/decision_consistency.csv: per-device decision consistency across repeated auth runs (append mode)
 - metrics/decision_consistency_state.json: persistent state used to compute running consistency and `p_final` stddev
-- metrics/voter_trust_weight_honest.csv: first selected honest voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
-- metrics/voter_trust_weight_malicious.csv: first selected malicious voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
+- metrics/voter_trust_weight_honest.csv: tracked single honest voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
+- metrics/voter_trust_weight_malicious.csv: tracked single malicious voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
 - blocks/block_*.dat: local block files
 - blocks/sensor_leaves.b64: accumulated sensor leaves (when leaf-mode=accumulate)
 
@@ -114,6 +114,7 @@ auth.go flags
 - -voter-formula-b: base `b` in `k = a * log_b(N)` for voter count (default: 10.0)
 - -count-event-recording-message: include event-recording submission as a separate protocol message in communication-overhead metrics (default: false)
 - -consistency-run-id: optional label used when appending decision consistency rows (default: auto UTC timestamp)
+- -tracked-voter-uuid: track trust/weight CSV for only one voter UUID (default: first voter from `iot_devices.json`)
 - -weight-omega-hardware / -weight-omega-security / -weight-omega-data-integrity / -weight-omega-manufacturer-cert / -weight-omega-performance / -weight-omega-network-compatibility: ω coefficients for candidate weight formula
 - -weight-lambda: λ uncertainty penalty coefficient
 - -continue-on-besu-error: continue processing other devices on Besu failures (default: true)
