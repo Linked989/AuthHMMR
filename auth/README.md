@@ -20,6 +20,7 @@ Quickstart
 3) Run authentication and build a block.
    go run ./cmd/auth
    go run ./cmd/auth -auth-async
+   go run ./cmd/auth -auth-async -auth-subrounds-enabled -auth-subrounds 3
    go run ./cmd/auth -auth-async && go run ./cmd/verify-device -leaf-index 10
    go run ./cmd/auth -auth-async -auth-wait
 4) Optional: show device summary.
@@ -86,6 +87,7 @@ Outputs
 - metrics/admission_accuracy.csv: TP/TN/FP/FN + admission accuracy per auth run
 - metrics/decision_consistency.csv: per-device decision consistency across repeated auth runs (append mode)
 - metrics/decision_consistency_state.json: persistent state used to compute running consistency and `p_final` stddev
+- metrics/auth_subround_metrics.csv: subround latency/vote metrics and total-round latency/final vote (append mode, when subround mode is enabled)
 - metrics/voter_trust_weight_honest.csv: tracked single honest voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
 - metrics/voter_trust_weight_malicious.csv: tracked single malicious voter, 2 columns per vote (`trust_score_after_vote`, `weight_after_vote`)
 - blocks/block_*.dat: local block files
@@ -108,6 +110,8 @@ auth.go flags
 - -sensor-enabled: include synthetic sensor payloads (default: true)
 - -sensor-leaves: number of sensor leaves per block (0 = auto)
 - -leaf-size: leaf size in bytes (default: 256)
+- -auth-subrounds-enabled: enable multi-subround voting per candidate device
+- -auth-subrounds: number of subrounds when `-auth-subrounds-enabled` is true (default: 3)
 - -hmmr-metrics: emit HMMR build/proof metrics
 - -hmmr-hash: hash algorithm for leaves (default: sha256)
 - -voter-formula-a: coefficient `a` in `k = a * log_b(N)` for voter count (default: 2.0)

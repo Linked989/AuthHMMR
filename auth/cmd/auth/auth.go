@@ -117,6 +117,8 @@ func main() {
 	leafSize := flag.Int("leaf-size", 256, "leaf size in bytes (e.g., 32 to mimic transaction hashes)")
 	authAsync := flag.Bool("auth-async", false, "submit auth txs without waiting for mining")
 	authWait := flag.Bool("auth-wait", false, "wait for auth txs after submitting (requires -auth-async)")
+	authSubroundsEnabled := flag.Bool("auth-subrounds-enabled", false, "enable multiple voting subrounds per candidate device")
+	authSubrounds := flag.Int("auth-subrounds", 3, "number of voting subrounds per candidate device when -auth-subrounds-enabled is true")
 	continueOnBesuError := flag.Bool("continue-on-besu-error", true, "continue processing other devices if one Besu authentication call fails")
 	besuRetries := flag.Int("besu-retries", 3, "number of retries for Besu auth submission/receipt wait")
 	besuRetryDelayMs := flag.Int("besu-retry-delay-ms", 250, "delay between Besu retries in milliseconds")
@@ -142,6 +144,9 @@ func main() {
 	}
 	if *leafSize <= 0 {
 		log.Fatalf("leaf-size must be greater than zero")
+	}
+	if *authSubroundsEnabled && *authSubrounds < 1 {
+		log.Fatalf("auth-subrounds must be >= 1 when auth-subrounds-enabled is true")
 	}
 
 	iotDevs, err := loadIoTDevices(IoTDevicesJSON)
@@ -245,63 +250,195 @@ func main() {
 	authLoopStart := time.Now()
 	trackedVoterHonestCSVPath := ""
 	trackedVoterMaliciousCSVPath := ""
+	subroundMetricsCSVPath := ""
+	multiRoundRunID := strings.TrimSpace(*consistencyRunID)
+	if multiRoundRunID == "" {
+		multiRoundRunID = authLoopStart.UTC().Format("20060102T150405Z")
+	}
 	for _, dev := range unauth {
 		deviceAdmissionStart := time.Now()
 		log.Printf("\n=== Device %s =========================================", dev.UUID)
 
+		subroundsPerDevice := 1
+		if *authSubroundsEnabled {
+			subroundsPerDevice = *authSubrounds
+		}
 		eligibleVoters := filterEligibleVotersByMinWeight(iotDevs, 10)
-		effectiveVoterCount := voterCount
-		if len(eligibleVoters) < voterCount {
-			effectiveVoterCount = voterCount - 1
-		}
-		if effectiveVoterCount > len(eligibleVoters) {
-			effectiveVoterCount = len(eligibleVoters)
-		}
-		if effectiveVoterCount < 0 {
-			effectiveVoterCount = 0
-		}
-		voters := randomSubset(eligibleVoters, effectiveVoterCount)
-		voterIDs := make([]string, len(voters))
-		for i := range voters {
-			voterIDs[i] = voters[i].UUID
-		}
-		log.Printf("Selected voters for %s (k=%d, eligible_weight_gt_10=%d): %s", dev.UUID, len(voters), len(eligibleVoters), strings.Join(voterIDs, ", "))
-		if len(voters) < 3 {
-			log.Printf("Not enough eligible voters for %s: selected=%d, minimum required=3; admission decision will be REJECT", dev.UUID, len(voters))
-		} else if len(voters) == voterCount-1 {
-			log.Printf("Using fallback voter count for %s: requested_k=%d, used_k=%d", dev.UUID, voterCount, len(voters))
-		}
+		availableVoters := cloneIoTVoters(eligibleVoters)
+		roundYesCnt := 0
+		roundTot := 0
+		roundYesWeight := 0.0
+		roundTotalWeight := 0.0
+		roundScoreCalcDur := time.Duration(0)
+		roundVoteCompDur := time.Duration(0)
+		roundScoreUpdateDur := time.Duration(0)
+		roundOffChainDur := time.Duration(0)
+		roundProtocolMessages := 0
+		roundYesMap := make(map[string]bool)
+		candidateWeight := 0.0
+		subroundMetricRecords := make([]internalmetrics.AuthSubroundMetricRecord, 0, subroundsPerDevice)
 
-		t0 := time.Now()
-		yesCnt, tot, yesWeight, totalWeight, candidateWeight, yesMap, scoreCalcDur, voteCompDur := doOffChainVoting(
-			voters,
-			dev,
-			*weightOmegaHardware,
-			*weightOmegaSecurity,
-			*weightOmegaDataIntegrity,
-			*weightOmegaManufacturerCert,
-			*weightOmegaPerformance,
-			*weightOmegaNetworkCompatibility,
-			*weightLambda,
-		)
-		offChainDur := time.Since(t0)
-		offChainTimesMs = append(offChainTimesMs, float64(offChainDur.Milliseconds()))
-		offChainTimesNs = append(offChainTimesNs, offChainDur.Nanoseconds())
-		scoreCalculationMs = append(scoreCalculationMs, float64(scoreCalcDur.Nanoseconds())/1e6)
-		voteComputationMs = append(voteComputationMs, float64(voteCompDur.Nanoseconds())/1e6)
+		for subroundIdx := 1; subroundIdx <= subroundsPerDevice; subroundIdx++ {
+			subroundStart := time.Now()
+			effectiveVoterCount := voterCount
+			if len(availableVoters) < voterCount {
+				effectiveVoterCount = voterCount - 1
+			}
+			if effectiveVoterCount > len(availableVoters) {
+				effectiveVoterCount = len(availableVoters)
+			}
+			if effectiveVoterCount < 0 {
+				effectiveVoterCount = 0
+			}
 
-		yesPct := 0.0
-		if totalWeight > 0 {
-			yesPct = yesWeight / totalWeight
-		}
-		authenticate := tot > 2 && yesPct >= FinalConsensus
-		trackedVoterParticipated := false
-		for _, v := range voters {
-			if v.UUID == trackedVoter {
-				trackedVoterParticipated = true
-				break
+			voters := randomSubset(availableVoters, effectiveVoterCount)
+			availableVoters = removeIoTVotersByUUID(availableVoters, voters)
+
+			voterIDs := make([]string, len(voters))
+			for i := range voters {
+				voterIDs[i] = voters[i].UUID
+			}
+			log.Printf(
+				"Subround %d/%d for %s: selected voters=%d (eligible_weight_gt_10=%d, available_remaining=%d): %s",
+				subroundIdx,
+				subroundsPerDevice,
+				dev.UUID,
+				len(voters),
+				len(eligibleVoters),
+				len(availableVoters),
+				strings.Join(voterIDs, ", "),
+			)
+			if len(voters) < 3 {
+				log.Printf("Not enough eligible voters for %s in subround %d: selected=%d, minimum required=3; subround decision will be REJECT", dev.UUID, subroundIdx, len(voters))
+			} else if len(voters) == voterCount-1 {
+				log.Printf("Using fallback voter count in subround %d for %s: requested_k=%d, used_k=%d", subroundIdx, dev.UUID, voterCount, len(voters))
+			}
+
+			t0 := time.Now()
+			yesCnt, tot, yesWeight, totalWeight, subroundCandidateWeight, yesMap, scoreCalcDur, voteCompDur := doOffChainVoting(
+				voters,
+				dev,
+				*weightOmegaHardware,
+				*weightOmegaSecurity,
+				*weightOmegaDataIntegrity,
+				*weightOmegaManufacturerCert,
+				*weightOmegaPerformance,
+				*weightOmegaNetworkCompatibility,
+				*weightLambda,
+			)
+			offChainDur := time.Since(t0)
+			candidateWeight = subroundCandidateWeight
+
+			subroundRatio := 0.0
+			if totalWeight > 0 {
+				subroundRatio = yesWeight / totalWeight
+			}
+			subroundAuthenticate := tot > 2 && subroundRatio >= FinalConsensus
+			subroundDecision := "reject"
+			if subroundAuthenticate {
+				subroundDecision = "accept"
+			}
+
+			trackedVoterParticipated := false
+			for _, v := range voters {
+				if v.UUID == trackedVoter {
+					trackedVoterParticipated = true
+					break
+				}
+			}
+
+			scoreUpdateStart := time.Now()
+			updateDevicesWeight(iotDevs, voters, yesMap, subroundAuthenticate)
+			scoreUpdateDur := time.Since(scoreUpdateStart)
+			if trackedVoterParticipated {
+				updatedTrackedVoter, ok := getIoTVoterByUUID(iotDevs, trackedVoter)
+				if ok {
+					csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
+						VoterIsMalicious:    updatedTrackedVoter.IsMalicious,
+						TrustScoreAfterVote: updatedTrackedVoter.TrustScore,
+						WeightAfterVote:     updatedTrackedVoter.Weight,
+					})
+					if err != nil {
+						log.Fatalf("save tracked-voter trust/weight csv: %v", err)
+					}
+					if updatedTrackedVoter.IsMalicious {
+						trackedVoterMaliciousCSVPath = csvPath
+					} else {
+						trackedVoterHonestCSVPath = csvPath
+					}
+				}
+			}
+
+			for uuid, vote := range yesMap {
+				roundYesMap[uuid] = vote
+			}
+			roundYesCnt += yesCnt
+			roundTot += tot
+			roundYesWeight += yesWeight
+			roundTotalWeight += totalWeight
+			roundScoreCalcDur += scoreCalcDur
+			roundVoteCompDur += voteCompDur
+			roundScoreUpdateDur += scoreUpdateDur
+			roundOffChainDur += offChainDur
+
+			admissionRequestCount := 1
+			evaluatorSelectionCount := tot
+			votesSentCount := tot
+			finalDecisionCount := 1
+			eventRecordingCount := 0
+			if *countEventRecordingMessage {
+				eventRecordingCount = 1
+			}
+			roundProtocolMessages += admissionRequestCount + evaluatorSelectionCount + votesSentCount + finalDecisionCount + eventRecordingCount
+
+			if *authSubroundsEnabled {
+				subroundMetricRecords = append(subroundMetricRecords, internalmetrics.AuthSubroundMetricRecord{
+					TimestampUTC:        time.Now().UTC(),
+					RunID:               multiRoundRunID,
+					CandidateDeviceUUID: dev.UUID,
+					SubroundIndex:       subroundIdx,
+					TotalSubrounds:      subroundsPerDevice,
+					SelectedVoters:      len(voters),
+					SubroundLatencyMs:   float64(time.Since(subroundStart).Nanoseconds()) / 1e6,
+					SubroundFinalVote:   subroundDecision,
+					SubroundVoteRatio:   subroundRatio,
+				})
 			}
 		}
+
+		offChainTimesMs = append(offChainTimesMs, float64(roundOffChainDur.Nanoseconds())/1e6)
+		offChainTimesNs = append(offChainTimesNs, roundOffChainDur.Nanoseconds())
+		scoreCalculationMs = append(scoreCalculationMs, float64(roundScoreCalcDur.Nanoseconds())/1e6)
+		voteComputationMs = append(voteComputationMs, float64(roundVoteCompDur.Nanoseconds())/1e6)
+		scoreUpdateMs = append(scoreUpdateMs, float64(roundScoreUpdateDur.Nanoseconds())/1e6)
+		totalLocalMs := float64((roundScoreCalcDur + roundVoteCompDur + roundScoreUpdateDur).Nanoseconds()) / 1e6
+		totalLocalComputationMs = append(totalLocalComputationMs, totalLocalMs)
+		protocolMessagesTotal = append(protocolMessagesTotal, roundProtocolMessages)
+
+		yesPct := 0.0
+		if roundTotalWeight > 0 {
+			yesPct = roundYesWeight / roundTotalWeight
+		}
+		authenticate := roundTot > 2 && yesPct >= FinalConsensus
+		finalRoundDecision := "reject"
+		if authenticate {
+			finalRoundDecision = "accept"
+		}
+		totalRoundLatencyMs := float64(time.Since(deviceAdmissionStart).Nanoseconds()) / 1e6
+		if *authSubroundsEnabled {
+			for i := range subroundMetricRecords {
+				subroundMetricRecords[i].TotalRoundLatencyMs = totalRoundLatencyMs
+				subroundMetricRecords[i].TotalRoundFinalVote = finalRoundDecision
+			}
+			csvPath, err := internalmetrics.AppendAuthSubroundMetricsCSV(MetricsDirectory, subroundMetricRecords)
+			if err != nil {
+				log.Fatalf("save auth subround metrics csv: %v", err)
+			}
+			if csvPath != "" {
+				subroundMetricsCSVPath = csvPath
+			}
+		}
+
 		groundTruth := groundTruthLabel(dev)
 		systemDecision := "reject"
 		if authenticate {
@@ -330,17 +467,17 @@ func main() {
 		log.Printf(
 			"Weighted voting for %s: yes_weight=%.2f total_weight=%.2f ratio=%.4f candidate_weight=%.2f threshold=%.2f",
 			dev.UUID,
-			yesWeight,
-			totalWeight,
+			roundYesWeight,
+			roundTotalWeight,
 			yesPct,
 			candidateWeight,
 			MinAcceptableTotal,
 		)
 
 		scIdx := indexByUUID[dev.UUID]
-		scDevices[scIdx].VotesReceivedYes += uint(yesCnt)
-		scDevices[scIdx].VotesReceivedNo += uint(tot - yesCnt)
-		scDevices[scIdx].VotesReceivedTotal += uint(tot)
+		scDevices[scIdx].VotesReceivedYes += uint(roundYesCnt)
+		scDevices[scIdx].VotesReceivedNo += uint(roundTot - roundYesCnt)
+		scDevices[scIdx].VotesReceivedTotal += uint(roundTot)
 		scDevices[scIdx].LastActive = time.Now().UnixNano()
 		if authenticate {
 			scDevices[scIdx].Authenticated = true
@@ -350,44 +487,9 @@ func main() {
 			scDevices[scIdx].IncorrectVotes++
 		}
 
-		scoreUpdateStart := time.Now()
-		updateDevicesWeight(iotDevs, voters, yesMap, authenticate)
-		scoreUpdateDur := time.Since(scoreUpdateStart)
-		if trackedVoterParticipated {
-			updatedTrackedVoter, ok := getIoTVoterByUUID(iotDevs, trackedVoter)
-			if ok {
-				csvPath, err := internalmetrics.AppendVoterInteractionCSV(MetricsDirectory, internalmetrics.VoterInteractionRecord{
-					VoterIsMalicious:    updatedTrackedVoter.IsMalicious,
-					TrustScoreAfterVote: updatedTrackedVoter.TrustScore,
-					WeightAfterVote:     updatedTrackedVoter.Weight,
-				})
-				if err != nil {
-					log.Fatalf("save tracked-voter trust/weight csv: %v", err)
-				}
-				if updatedTrackedVoter.IsMalicious {
-					trackedVoterMaliciousCSVPath = csvPath
-				} else {
-					trackedVoterHonestCSVPath = csvPath
-				}
-			}
-		}
-		scoreUpdateMs = append(scoreUpdateMs, float64(scoreUpdateDur.Nanoseconds())/1e6)
-		totalLocalMs := float64(scoreCalcDur.Nanoseconds()+voteCompDur.Nanoseconds()+scoreUpdateDur.Nanoseconds()) / 1e6
-		totalLocalComputationMs = append(totalLocalComputationMs, totalLocalMs)
-
-		payload := buildTransactionPayload(dev.UUID, authenticate, yesCnt, tot-yesCnt, yesMap)
+		payload := buildTransactionPayload(dev.UUID, authenticate, roundYesCnt, roundTot-roundYesCnt, roundYesMap)
 		commCostBytes = append(commCostBytes, len(payload))
 		transactions = append(transactions, blockchain.NewTransaction("auth_result", payload, time.Now()))
-		admissionRequestCount := 1
-		evaluatorSelectionCount := tot
-		votesSentCount := tot
-		finalDecisionCount := 1
-		eventRecordingCount := 0
-		if *countEventRecordingMessage {
-			eventRecordingCount = 1
-		}
-		totalProtocolMessages := admissionRequestCount + evaluatorSelectionCount + votesSentCount + finalDecisionCount + eventRecordingCount
-		protocolMessagesTotal = append(protocolMessagesTotal, totalProtocolMessages)
 
 		decision := "rejected"
 		if authenticate {
@@ -620,6 +722,9 @@ func main() {
 	if decisionConsistencyCSVPath != "" {
 		fmt.Printf("Decision consistency CSV (append) written to: %s\n", decisionConsistencyCSVPath)
 	}
+	if subroundMetricsCSVPath != "" {
+		fmt.Printf("Auth subround metrics CSV (append) written to: %s\n", subroundMetricsCSVPath)
+	}
 	if trackedVoterHonestCSVPath != "" {
 		fmt.Printf("Tracked-voter trust/weight CSV (honest) written to: %s\n", trackedVoterHonestCSVPath)
 	}
@@ -739,6 +844,30 @@ func randomSubset(devices []IoTDevice, count int) []IoTDevice {
 		subset[i], subset[j] = subset[j], subset[i]
 	})
 	return subset[:count]
+}
+
+func cloneIoTVoters(devices []IoTDevice) []IoTDevice {
+	cloned := make([]IoTDevice, len(devices))
+	copy(cloned, devices)
+	return cloned
+}
+
+func removeIoTVotersByUUID(pool []IoTDevice, selected []IoTDevice) []IoTDevice {
+	if len(selected) == 0 {
+		return pool
+	}
+	selectedSet := make(map[string]struct{}, len(selected))
+	for _, v := range selected {
+		selectedSet[v.UUID] = struct{}{}
+	}
+	remaining := make([]IoTDevice, 0, len(pool))
+	for _, v := range pool {
+		if _, ok := selectedSet[v.UUID]; ok {
+			continue
+		}
+		remaining = append(remaining, v)
+	}
+	return remaining
 }
 
 func filterEligibleVotersByMinWeight(devices []IoTDevice, minExclusiveWeight uint) []IoTDevice {
@@ -884,8 +1013,8 @@ func updateDevicesWeight(global []IoTDevice, subset []IoTDevice, yesMap map[stri
 		maxWeight               = 100.0
 		minWeight               = 10.0
 		LTrust                  = 100.0
-		bTrust                  = 4.726 // calibrated so first post-reset step is ~1.0
-		cTrust                  = 0.0261
+		bTrust                  = 7.726 // calibrated so first post-reset step is ~1.0
+		cTrust                  = 0.0361
 		trustPromotionThreshold = 99.999
 		penalty                 = 10.0
 	)
@@ -1257,10 +1386,12 @@ func saveCommunicationOverheadCSV(
 		return "", err
 	}
 
-	filename := fmt.Sprintf("communication_overhead_%s.csv", time.Now().UTC().Format("20060102_150405"))
-	path := filepath.Join(dir, filename)
-
-	f, err := os.Create(path)
+	path := filepath.Join(dir, "communication_overhead.csv")
+	newFile := false
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		newFile = true
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return "", err
 	}
@@ -1269,17 +1400,19 @@ func saveCommunicationOverheadCSV(
 	writer := csv.NewWriter(f)
 	defer writer.Flush()
 
-	header := []string{
-		"device_uuid",
-		"admission_request_messages",
-		"evaluator_selection_notification_messages",
-		"evaluator_vote_messages",
-		"final_decision_notification_messages",
-		"event_recording_submission_messages",
-		"total_protocol_messages_per_decision",
-	}
-	if err := writer.Write(header); err != nil {
-		return "", err
+	if newFile {
+		header := []string{
+			"device_uuid",
+			"admission_request_messages",
+			"evaluator_selection_notification_messages",
+			"evaluator_vote_messages",
+			"final_decision_notification_messages",
+			"event_recording_submission_messages",
+			"total_protocol_messages_per_decision",
+		}
+		if err := writer.Write(header); err != nil {
+			return "", err
+		}
 	}
 
 	for i := range total {
